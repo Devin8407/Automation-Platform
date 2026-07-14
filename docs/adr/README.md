@@ -1,0 +1,18 @@
+# Architecture Decision Records
+
+Architecture Decision Records (ADRs) document significant architectural decisions made during the development of the Automation Platform.
+
+Each ADR captures:
+
+- The context surrounding the decision
+- The decision that was made
+- Alternatives that were considered
+- The consequences of the decision
+
+The purpose of ADRs is to preserve architectural reasoning rather than simply record implementation details.
+
+## ADR Index
+
+- [**ADR-001:** Modular Monolith](ADR-001-modular-monolith.md)
+- [**ADR-002:** Queue-Driven Execution](ADR-002-queue-driven-execution.md)
+- [**ADR-003:** Interface-Based Extension Points](ADR-003-interface-based-extension-points.md)
