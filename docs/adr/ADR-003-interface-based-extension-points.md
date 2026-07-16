@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The Automation Platform must support multiple trigger types and task types while keeping the Workflow Engine and Worker focused on orchestration rather than implementation details.
+The Automation Platform must support multiple trigger types and task types while keeping the application layer and worker runtime focused on orchestration rather than implementation details.
 
 A decision was required for how new functionality should be introduced without continually modifying existing orchestration code.
 
@@ -16,7 +16,7 @@ The platform will provide interface-based extension points for trigger types and
 
 Concrete implementations will share common interfaces and be resolved through registries or factories.
 
-The Workflow Engine and Workers will depend only on these abstractions rather than concrete implementations.
+The application layer depends only on these abstractions.
 
 The platform intentionally does **not** implement a dynamic runtime plugin framework. Instead, it provides a modular architecture that allows new implementations to be added with minimal changes while avoiding unnecessary complexity.
 
@@ -75,7 +75,7 @@ Use common interfaces with registries or factories to resolve implementations.
 
 ### Positive
 
-* Workflow Engine remains unaware of concrete task implementations
+* Application services remains unaware of concrete task implementations
 * Workers execute behavior through abstractions
 * New task and trigger types require minimal changes
 * Promotes maintainable and testable code

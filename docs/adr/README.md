@@ -16,3 +16,5 @@ The purpose of ADRs is to preserve architectural reasoning rather than simply re
 - [**ADR-001:** Modular Monolith](ADR-001-modular-monolith.md)
 - [**ADR-002:** Queue-Driven Execution](ADR-002-queue-driven-execution.md)
 - [**ADR-003:** Interface-Based Extension Points](ADR-003-interface-based-extension-points.md)
+- [**ADR-004:** Runtime Processes and Application Services](ADR-004-runtime-processes-and-application-services.md)
+- [**ADR-005:** Immutable Workflow Definition](ADR-005-Immutable-Workflow-Definitions.md)

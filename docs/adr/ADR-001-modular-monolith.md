@@ -8,7 +8,7 @@ Accepted
 
 The Automation Platform is intended to demonstrate production-quality backend architecture while remaining appropriate for a single developer to design, implement, and maintain.
 
-The project requires multiple collaborating components, including a Workflow Engine, background workers, trigger implementations, task implementations, persistence, and a REST API.
+The project requires multiple collaborating components, including runtime processes, application services, plugin systems, persistence, and a REST API.
 
 A decision was required regarding the overall application architecture.
 
@@ -18,7 +18,9 @@ The platform will be implemented as a modular monolith.
 
 The application will be deployed as a single service while organizing functionality into well-defined modules with clear responsibilities and interfaces.
 
-Each module owns its own business logic and communicates with other modules through explicit abstractions.
+Each module owns its own responsibilities and communicates through explicit abstractions.
+
+The architecture separates runtime processes, application services, domain models, persistence, and extensibility mechanisms into cohesive modules with well-defined dependency boundaries.
 
 Where appropriate, modules may internally use familiar architectural patterns such as repositories, services, or dependency injection.
 

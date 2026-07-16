@@ -4,23 +4,42 @@
 
 The Automation Platform is a production-style backend application for defining and executing automated workflows.
 
-The project is designed to demonstrate software engineering practices commonly used in backend and infrastructure systems, including modular architecture, asynchronous execution, dependency inversion, REST APIs, background workers, database persistence, testing, and documentation.
+The project is designed to demonstrate backend software engineering practices commonly found in modern infrastructure systems, including clean architecture, asynchronous execution, modular design, background workers, persistence, testing, dependency inversion, extensibility, and production-oriented engineering practices.
 
-The emphasis is on maintainability, extensibility, and architectural clarity rather than feature count.
+Rather than optimizing for feature count, the project prioritizes maintainability, clear architectural boundaries, and thoughtful engineering decisions that can be discussed and defended during technical interviews.
 
 ---
 
 # Design Principles
 
-The architecture is guided by the following principles:
+The architecture is guided by the following principles.
 
 - Favor modularity over monolithic business logic.
-- Prefer composition over inheritance.
+- Separate runtime concerns from business logic.
 - Depend on abstractions rather than concrete implementations.
-- Keep responsibilities clearly defined.
-- Separate orchestration from execution.
-- Introduce complexity only when it solves a real problem.
+- Prefer composition over inheritance.
+- Keep responsibilities small and well-defined.
+- Build incrementally while preserving architectural quality.
+- Introduce complexity only when it solves a real engineering problem.
 - Design for extensibility without over-engineering.
+
+---
+
+# Architectural Philosophy
+
+The platform follows a modular monolith architecture.
+
+Although deployed as a single application, the system is organized into independent modules with clearly defined responsibilities and dependency boundaries.
+
+The architecture separates:
+
+- Runtime processes responsible for reacting to external events.
+- Application services responsible for workflow orchestration.
+- Domain models representing business concepts.
+- Persistence responsible for durable storage.
+- Plugin systems that extend supported triggers and task types.
+
+This separation allows each concern to evolve independently while maintaining a simple deployment model.
 
 ---
 
@@ -29,87 +48,186 @@ The architecture is guided by the following principles:
 ```mermaid
 flowchart TD
 
-    User["User / API"]
+    Client["Client"]
 
-    Trigger["Trigger Types
-    - Manual
-    - Scheduled
-    - Webhook
-    - File System"]
+    API["API Runtime"]
 
-    Engine["Workflow Engine"]
+    Scheduler["Scheduler Runtime"]
+
+    Worker["Worker Runtime"]
+
+    Application["Application Layer"]
 
     Queue["Execution Queue"]
 
-    Worker["Worker"]
+    Tasks["Task Plugins"]
 
-    Task["Task Implementation"]
+    Triggers["Trigger Plugins"]
+
+    Persistence["Persistence Layer"]
 
     DB[(PostgreSQL)]
 
-    User --> Engine
-    Trigger --> Engine
+    Client --> API
 
-    Engine --> Queue
-    Engine --> DB
+    API --> Application
 
-    Queue --> Worker
+    Scheduler --> Triggers
+    Triggers --> Application
 
-    Worker --> Task
-    Task --> Worker
+    Worker --> Queue
+    Worker --> Application
 
-    Worker --> Engine
+    Application --> Queue
+    Application --> Persistence
+    Application --> Tasks
+
+    Persistence --> DB
 ```
 
-The Workflow Engine is the central orchestrator of the platform.
+The runtime processes provide different entry points into the system.
 
-Trigger implementations determine **when** workflows begin.
+The application layer contains the business rules that orchestrate workflow execution.
 
-Workers execute tasks but never determine workflow order.
+Workers never determine workflow progression, task implementations never understand workflow structure, and trigger implementations never understand execution.
 
-Task implementations perform business logic without knowledge of the overall workflow.
-
----
-
-# Execution Model
-
-The platform distinguishes between **workflow definitions** and **workflow executions**.
-
-A **workflow definition** describes *what* should happen.
-
-A **workflow execution** represents a single runtime instance of that workflow.
-
-Each execution maintains its own state, timestamps, logs, retry history, and outcome independently of the workflow definition.
-
-This separation allows a workflow to be executed repeatedly while preserving complete execution history.
+Each component has a single responsibility.
 
 ---
 
-# Core Concepts
+# Runtime Processes
 
-## Workflow
+The platform consists of multiple independent runtime processes.
 
-A reusable automation definition consisting of an ordered sequence of tasks and one or more trigger configurations.
+## API Runtime
 
-A workflow is immutable during execution and may be executed many times.
+Receives HTTP requests, validates user input, and invokes application capabilities.
+
+The API contains minimal business logic and acts primarily as a transport layer.
+
+---
+
+## Scheduler Runtime
+
+Continuously evaluates trigger definitions.
+
+When a trigger condition is satisfied, the scheduler invokes the application layer to begin a new workflow execution.
+
+The scheduler understands *when* workflows begin but not *how* they execute.
+
+---
+
+## Worker Runtime
+
+Continuously claims runnable task executions from the execution queue.
+
+Workers invoke the application layer to process claimed tasks.
+
+Workers intentionally contain no workflow orchestration logic.
+
+---
+
+# Application Layer
+
+The application layer contains the orchestration logic for the platform.
+
+It is responsible for implementing business capabilities such as:
+
+- Starting workflow executions
+- Processing task executions
+- Advancing workflow state
+- Determining newly runnable work
+- Completing workflow executions
+- Handling failures and retries (future)
+
+The application layer is intentionally independent from HTTP, background workers, and scheduling.
+
+Every runtime process invokes the same application capabilities.
+
+---
+
+# Domain Model
+
+The platform distinguishes between immutable workflow definitions and mutable execution state.
+
+## Workflow Definition
+
+A reusable automation template describing:
+
+- Trigger configuration
+- Task definitions
+- Workflow structure
+
+Workflow definitions are immutable during execution and may be executed many times.
 
 ---
 
 ## Workflow Execution
 
-A runtime instance of a workflow.
+Represents a single runtime instance of a workflow.
 
-The Workflow Engine creates a new execution whenever a workflow begins.
+Each execution tracks its own:
 
-Each execution progresses independently through its own lifecycle.
+- Status
+- Timestamps
+- Execution history
+- Runtime progress
+
+Multiple executions may exist simultaneously for the same workflow definition.
 
 ---
 
-## Task
+## Task Definition
 
-A unit of work within a workflow.
+Describes a unit of work within a workflow.
 
-Tasks describe **what** should be executed rather than **how** it is executed.
+Task definitions specify:
+
+- Task type
+- Configuration
+- Parameters
+
+Task definitions contain no runtime state.
+
+---
+
+## Task Execution
+
+Represents the runtime state of an individual task.
+
+Task executions maintain execution-specific information such as:
+
+- Current status
+- Execution timestamps
+- Retry information
+- Runtime metadata
+
+Task executions are created whenever a workflow execution begins.
+
+---
+
+# Plugin Architecture
+
+The platform provides two primary extension points.
+
+## Trigger Plugins
+
+Trigger plugins determine **when** workflows should begin.
+
+Examples include:
+
+- Manual
+- Scheduled
+- Webhook
+- File System
+
+New trigger types can be introduced without modifying workflow orchestration.
+
+---
+
+## Task Plugins
+
+Task plugins perform individual units of work.
 
 Examples include:
 
@@ -117,187 +235,94 @@ Examples include:
 - Generate CSV
 - Send Email
 - Delay
-- Run Python Script
+- Execute Python Script
+
+Task implementations remain completely independent from workflow orchestration.
+
+New task types can be introduced without modifying the worker or application layer.
 
 ---
 
-## Trigger
+# Execution Model
 
-Defines the condition under which a workflow begins.
+Workflow execution is asynchronous.
 
-Examples include:
+When a workflow begins:
 
-- Manual
-- Scheduled
-- Webhook
-- File System Event
+1. A new Workflow Execution is created.
+2. Runtime Task Executions are created.
+3. Runnable task executions are placed onto the execution queue.
+4. Workers claim queued task executions.
+5. The application layer processes completed tasks.
+6. Newly runnable task executions are queued.
+7. The workflow completes when all task executions have finished.
 
-Triggers initiate workflow execution but contain no workflow business logic.
+The execution queue stores runnable task executions rather than entire workflows.
 
----
-
-## Execution Queue
-
-The Workflow Engine never executes tasks directly.
-
-Instead, it places runnable work onto an execution queue.
-
-Workers independently claim queued work and execute it asynchronously.
-
-The execution queue is an architectural abstraction. The initial implementation is backed by PostgreSQL, allowing the implementation to evolve without changing workflow orchestration.
-
----
-
-## Worker
-
-A background process responsible for executing queued work.
-
-Workers execute tasks, report results, and return control to the Workflow Engine.
-
-Workers intentionally remain unaware of workflow structure and execution order.
-
----
-
-# Workflow Execution Lifecycle
-
-```mermaid
-flowchart LR
-
-    Start["Trigger Fires"]
-
-    Create["Create Workflow Execution"]
-
-    Queue["Queue Runnable Task"]
-
-    Worker["Worker Claims Task"]
-
-    Execute["Execute Task"]
-
-    Update["Update Execution State"]
-
-    Decision{"More Tasks?"}
-
-    Finish["Workflow Complete"]
-
-    Start --> Create
-    Create --> Queue
-    Queue --> Worker
-    Worker --> Execute
-    Execute --> Update
-    Update --> Decision
-    Decision -->|Yes| Queue
-    Decision -->|No| Finish
-```
-
-The Workflow Engine continually evaluates workflow state and determines which task should execute next.
-
-Workers simply execute the work assigned to them and report the results.
+This allows multiple workers to process independent work while the application layer remains responsible for orchestration.
 
 ---
 
 # Component Responsibilities
 
-## Workflow Engine
-
-The Workflow Engine is the central coordinator of the platform.
-
-Responsibilities include:
-
-- Creating workflow executions
-- Tracking execution state
-- Determining runnable tasks
-- Scheduling work
-- Handling completion and failure
-- Orchestrating workflow progression
-
-The Workflow Engine never performs business logic itself.
-
----
-
-## Trigger System
-
-Responsible for determining when workflows begin.
-
-Trigger implementations are isolated from workflow execution logic.
-
-New trigger types can be introduced without modifying the Workflow Engine.
-
----
-
-## Worker
-
-Responsible for:
-
-- Claiming queued work
-- Executing task implementations
-- Recording execution results
-- Reporting completion or failure
-
-Workers intentionally contain no orchestration logic.
-
----
-
-## Task Implementations
-
-Each task type implements a common interface.
-
-Task implementations encapsulate business logic while remaining independent of the Workflow Engine and Worker.
-
-New task types can be introduced without modifying orchestration code.
-
----
-
-## Persistence Layer
-
-Responsible for storing:
-
-- Workflow definitions
-- Workflow executions
-- Execution state
-- Task definitions
-- Execution history
-- Queue state
-
-Persistence is isolated from business logic through repository abstractions.
+| Component | Responsibility |
+|-----------|----------------|
+| Runtime Processes | React to external events and invoke application capabilities. |
+| Application Layer | Implement workflow orchestration and business rules. |
+| Domain | Represent business concepts and execution state. |
+| Persistence | Store and retrieve durable system state. |
+| Execution Queue | Distribute runnable work between workers. |
+| Trigger Plugins | Determine when workflows begin. |
+| Task Plugins | Execute individual units of work. |
 
 ---
 
 # Extensibility
 
-The platform provides interface-based extension points for both trigger types and task types.
+The architecture intentionally favors extension over modification.
 
-Rather than relying on conditional logic, the Workflow Engine and Workers depend on abstractions that allow new implementations to be introduced without modifying existing orchestration code.
+New capabilities should be introduced by adding new implementations rather than modifying existing orchestration logic.
 
-This approach follows the Open/Closed Principle by allowing the system to grow through extension rather than modification.
+Examples include:
+
+- New trigger plugins
+- New task plugins
+- Alternative queue implementations
+- Additional runtime processes
+- Alternative persistence implementations
+
+This approach follows the Open/Closed Principle while keeping the core architecture stable.
 
 ---
 
-# Key Design Decisions
+# Major Architectural Decisions
 
-The following Architecture Decision Records (ADRs) document the major architectural decisions for the platform.
+Significant architectural decisions are documented using Architecture Decision Records (ADRs).
 
-- [**ADR-001**: Modular Monolith](../adr/ADR-001-modular-monolith.md)
+- [**ADR-001:** Modular Monolith](../adr/ADR-001-modular-monolith.md)
 - [**ADR-002:** Queue-Driven Execution](../adr/ADR-002-queue-driven-execution.md)
 - [**ADR-003:** Interface-Based Extension Points](../adr/ADR-003-interface-based-extension-points.md)
+- [**ADR-004:** Runtime Processes and Application Services](../adr/ADR-004-runtime-processes-and-application-services.md)
+- [**ADR-005:** Immutable Workflow Definition](../adr/ADR-005-Immutable-Workflow-Definitions.md)
 
-See the corresponding ADRs for the decision context, alternatives considered, tradeoffs, and consequences.
+These documents explain the context, alternatives considered, tradeoffs, and consequences behind each decision.
 
 ---
 
 # Future Evolution
 
-The architecture intentionally supports future enhancements without requiring major redesign.
+The architecture intentionally supports future enhancements without requiring fundamental redesign.
 
-Potential future additions include:
+Potential future capabilities include:
 
-- Retry policies
-- Additional trigger types
 - Parallel task execution
-- Workflow versioning
 - Directed acyclic graph (DAG) workflows
+- Retry policies
+- Workflow versioning
 - Distributed workers
-- RabbitMQ or Redis-backed queues
+- RabbitMQ-backed queues
+- Redis integration
 - Metrics and observability
 - AI-assisted workflow creation
 
-These features are intentionally deferred until they solve a real engineering problem.
+These features are intentionally deferred until they solve meaningful engineering problems.

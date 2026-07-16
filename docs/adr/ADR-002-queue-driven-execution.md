@@ -8,15 +8,15 @@ Accepted
 
 The Automation Platform executes workflows consisting of one or more tasks. A decision was needed regarding how task execution should be coordinated.
 
-The simplest approach would be for the Workflow Engine to execute tasks immediately after a workflow is started. While straightforward, this tightly couples workflow orchestration with task execution, prevents asynchronous processing, and limits future scalability.
+The simplest approach would be for the application layer to execute tasks synchronously when a workflow is started. While straightforward, this tightly couples workflow orchestration with task execution, prevents asynchronous processing, and limits future scalability.
 
 The project is intended to demonstrate production-style backend architecture, including background workers and asynchronous execution.
 
 ## Decision
 
-The Workflow Engine will orchestrate workflow execution by placing runnable tasks onto an execution queue rather than executing them directly.
+The application layer will orchestrate workflow execution by placing runnable task executions onto an execution queue rather than executing them directly.
 
-Background workers will independently claim queued work, execute task implementations, and report execution results back to the Workflow Engine.
+Background workers will invoke shared application services to process claimed task executions and persist execution state.
 
 The execution queue is treated as an architectural abstraction. The initial implementation will use PostgreSQL as the queue backend, allowing the implementation to evolve in the future without changing orchestration logic.
 
@@ -24,7 +24,7 @@ The execution queue is treated as an architectural abstraction. The initial impl
 
 ### Synchronous Execution
 
-The Workflow Engine executes each task directly.
+The application layer executes each task directly.
 
 **Pros**
 
@@ -42,10 +42,11 @@ The Workflow Engine executes each task directly.
 
 ### Queue-Driven Execution (Selected)
 
-The Workflow Engine enqueues runnable work for background workers.
+Runnable work is enqueued by application layer for background workers to claim.
 
 **Pros**
 
+* Enables multiple runtime processes to share a common orchestration model.
 * Separates orchestration from execution
 * Enables asynchronous processing
 * Supports independent worker processes
