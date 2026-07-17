@@ -1,4 +1,4 @@
-# ADR-005: Immutable Workflow Definitions
+# ADR-005: Separate Definitions from Execution State
 
 ## Status
 

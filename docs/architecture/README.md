@@ -16,8 +16,9 @@ For someone new to the project, the recommended reading order is:
 
 1. [Architecture Overview](overview.md)
 2. [Execution Model](execution-model.md)
-3. [Project Structure](project-structure.md)
-4. [Data Model](data-model.md)
+3. [Application Layer](application/application-overview.md)
+4. [Project Structure](project-structure.md)
+5. [Data Model](data-model.md)
 
 ---
 
@@ -44,6 +45,19 @@ Answers:
 - How does a workflow execute?
 - How do workers participate?
 - How is work coordinated?
+
+---
+
+## Application Layer
+
+Describes the business capabilities of the platform and the architectural boundary between runtime processes and supporting infrastructure.
+
+Answers:
+
+- Where does business logic live?
+- What capabilities does the platform expose?
+- How do runtime processes interact with the rest of the system?
+- What belongs inside the Application Layer?
 
 ---
 

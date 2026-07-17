@@ -303,7 +303,7 @@ Significant architectural decisions are documented using Architecture Decision R
 - [**ADR-002:** Queue-Driven Execution](../adr/ADR-002-queue-driven-execution.md)
 - [**ADR-003:** Interface-Based Extension Points](../adr/ADR-003-interface-based-extension-points.md)
 - [**ADR-004:** Runtime Processes and Application Services](../adr/ADR-004-runtime-processes-and-application-services.md)
-- [**ADR-005:** Immutable Workflow Definition](../adr/ADR-005-Immutable-Workflow-Definitions.md)
+- [**ADR-005:** Separate Definitions from Execution State](../adr/ADR-005-Separate-Definitions-from-Execution-State.md)
 
 These documents explain the context, alternatives considered, tradeoffs, and consequences behind each decision.
 
@@ -326,3 +326,7 @@ Potential future capabilities include:
 - AI-assisted workflow creation
 
 These features are intentionally deferred until they solve meaningful engineering problems.
+
+---
+
+Additional architectural details are documented in this directory, including the execution model, application layer, project structure, and conceptual data model.
