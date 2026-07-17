@@ -20,6 +20,7 @@ For someone new to the project, the recommended reading order is:
 4. [Persistence Layer](persistence/persistence-overview.md)
 5. [Project Structure](project-structure.md)
 6. [Data Model](data-model.md)
+7. [Domain Models](domain.md)
 
 ---
 
