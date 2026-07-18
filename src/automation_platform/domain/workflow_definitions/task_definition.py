@@ -20,6 +20,8 @@ class TaskDefinition:
 
     type: str
 
+    key: str
+
     configuration: dict[str, Any] = field(default_factory=dict)
 
     dependencies: list[UUID] = field(default_factory=list)

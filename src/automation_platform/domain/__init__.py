@@ -2,6 +2,11 @@ from .common import (
     TaskStatus,
     WorkflowStatus,
 )
+from .execution_runtime import (
+    TaskContext,
+    TaskOutput,
+    TaskResult,
+)
 from .workflow_definitions import (
     TaskDefinition,
     TriggerDefinition,
@@ -15,6 +20,9 @@ from .workflow_executions import (
 __all__ = [
     "TaskStatus",
     "WorkflowStatus",
+    "TaskContext",
+    "TaskOutput",
+    "TaskResult",
     "TaskDefinition",
     "TriggerDefinition",
     "WorkflowDefinition",

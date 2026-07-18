@@ -152,6 +152,8 @@ Mappers translate between:
 
 This translation remains completely hidden from the Application Layer.
 
+Task definition configuration and task execution outputs are stored as JSONB documents because their structure is plugin-defined.
+
 ---
 
 # Unit of Work

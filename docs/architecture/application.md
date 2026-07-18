@@ -22,7 +22,9 @@ The Application Layer is responsible for:
 - Managing execution state.
 - Coordinating persistence.
 - Determining when work should be queued.
+- Constructing task execution context.
 - Resolving task and trigger implementations.
+- Interpreting task execution results.
 
 The Application Layer should answer the question:
 
@@ -140,7 +142,13 @@ Public capabilities include:
 
 Processing a task includes:
 
-- Executing the task implementation.
+- Loading the task definition.
+- Loading outputs from completed dependency tasks.
+- Constructing TaskContext.
+- Resolving the appropriate task plugin.
+- Executing the task plugin.
+- Interpreting TaskResult.
+- Persisting task output.
 - Updating execution state.
 - Determining newly runnable tasks.
 - Queueing newly runnable work.
@@ -175,6 +183,8 @@ Examples of internal implementation include:
 - Task Execution creation
 - Queue initialization
 - Workflow completion
+- TaskContext construction
+- TaskResult interpretation
 - Retry calculations
 - Dependency updates
 
@@ -208,6 +218,8 @@ Implementation details remain private to preserve flexibility and reduce couplin
 
 The Application Layer coordinates work but does not perform infrastructure-specific operations itself.
 
+It assembles execution context from persisted domain state, delegates execution to task plugins, interprets the returned TaskResult, and determines the resulting business actions.
+
 Infrastructure components provide services.
 
 The Application Layer decides when those services should be used.
@@ -227,6 +239,43 @@ It coordinates:
 - Trigger Plugins
 
 without exposing those implementation details to runtime processes.
+
+---
+
+# Task Execution Flow
+
+Task processing follows a consistent orchestration model.
+
+```mermaid
+flowchart LR
+
+Definition["Task Definition"]
+
+Parents["Parent Task Outputs"]
+
+Context["TaskContext"]
+
+Plugin["Task Plugin"]
+
+Result["TaskResult"]
+
+Execution["Task Execution"]
+
+Definition --> Context
+Parents --> Context
+
+Context --> Plugin
+
+Plugin --> Result
+
+Result --> Execution
+```
+
+Application services construct TaskContext from persisted workflow state.
+
+Task plugins execute without knowledge of persistence, queueing, or workflow orchestration.
+
+The Application Layer interprets TaskResult and updates workflow execution accordingly.
 
 ---
 

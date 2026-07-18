@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
 from ..common.enums import TaskStatus
+from ..execution_runtime import TaskOutput
 
 
 @dataclass(slots=True)
@@ -33,7 +33,7 @@ class TaskExecution:
 
     retry_count: int = 0
 
-    result: Any | None = None
+    output: TaskOutput | None
 
     error_message: str | None = None
 

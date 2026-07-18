@@ -6,7 +6,7 @@ The Domain Layer defines the core business concepts used throughout the Automati
 
 It represents **what** the platform manages rather than **how** those concepts are stored, executed, or exposed through external interfaces.
 
-The Domain Layer is intentionally independent of infrastructure concerns such as databases, queues, HTTP APIs, and task implementations.
+The Domain Layer is intentionally independent of infrastructure concerns such as databases, queues, HTTP APIs, and plugin implementations.
 
 ---
 
@@ -19,6 +19,9 @@ The Domain Layer is responsible for:
 - Representing task definitions
 - Representing task executions
 - Representing trigger definitions
+- Representing task execution context
+- Representing task execution results
+- Representing task outputs
 - Defining shared domain concepts
 - Encapsulating lightweight domain behavior
 
@@ -41,6 +44,7 @@ The Domain Layer follows several guiding principles.
 - Remain independent of infrastructure.
 - Keep domain objects simple and expressive.
 - Separate reusable definitions from runtime state.
+- Separate persisted business entities from transient execution objects.
 - Allow lightweight domain behavior while avoiding orchestration.
 - Prefer composition over inheritance.
 
@@ -58,6 +62,13 @@ WorkflowExecution "1" --> "*" TaskExecution
 
 WorkflowExecution --> WorkflowDefinition
 TaskExecution --> TaskDefinition
+
+TaskContext --> TaskDefinition
+TaskContext --> TaskOutput
+
+TaskResult --> TaskOutput
+
+TaskExecution --> TaskOutput
 ```
 
 The platform distinguishes between reusable workflow definitions and their runtime executions.
@@ -65,6 +76,8 @@ The platform distinguishes between reusable workflow definitions and their runti
 Definitions describe **what should happen**.
 
 Executions describe **what is currently happening**.
+
+Execution support objects model communication between the Application Layer and task plugins.
 
 ---
 
@@ -90,18 +103,21 @@ Represents a reusable description of a workflow task.
 
 Task definitions describe:
 
-- Task implementation type
+- Task key
+- Plugin type
 - Configuration
 - Dependencies
 - Retry policy
 
 Task definitions contain no runtime state.
 
+The task key uniquely identifies a task within a workflow and is used by downstream tasks when accessing parent outputs.
+
 ---
 
 ## TriggerDefinition
 
-Represents a reusable trigger configuration.
+Represents reusable trigger configuration.
 
 Trigger definitions describe when workflows should begin execution.
 
@@ -134,15 +150,56 @@ Task executions track:
 - Remaining dependencies
 - Retry count
 - Execution timestamps
-- Result information
+- Task output
 
 Task executions reference their corresponding TaskDefinition.
 
 ---
 
-# Definitions vs Executions
+# Execution Support Objects
 
-The Domain Layer intentionally separates reusable definitions from runtime state.
+Execution support objects exist only while work is actively being processed.
+
+They are not long-lived business entities.
+
+## TaskContext
+
+TaskContext represents all information required by a task plugin.
+
+It contains:
+
+- Task configuration
+- Parent task outputs
+
+Application services construct TaskContext immediately before plugin execution.
+
+---
+
+## TaskResult
+
+TaskResult represents the outcome of task execution.
+
+It contains:
+
+- Terminal task status
+- Task output
+- Optional execution message
+
+TaskResult exists only long enough for the Application Layer to update execution state.
+
+---
+
+## TaskOutput
+
+TaskOutput represents plugin-defined output produced by a completed task.
+
+Outputs are persisted as part of TaskExecution and supplied to downstream tasks through TaskContext.
+
+The internal structure of TaskOutput is intentionally plugin-defined.
+
+---
+
+# Definitions vs Executions
 
 | Definition | Execution |
 |------------|-----------|
@@ -153,6 +210,8 @@ The Domain Layer intentionally separates reusable definitions from runtime state
 Definitions describe reusable automation templates.
 
 Executions represent individual runtime instances.
+
+Execution support objects exist only during task processing.
 
 ---
 
@@ -186,18 +245,15 @@ Workflow executions own task executions.
 
 Task executions reference the task definition from which they were created.
 
-This separation allows:
+TaskContext combines immutable task configuration with outputs produced by parent task executions.
 
-- Multiple concurrent executions
-- Complete execution history
-- Immutable workflow definitions
-- Future workflow versioning
+TaskResult becomes persisted execution state after plugin execution completes.
 
 ---
 
 # Shared Domain Concepts
 
-Shared concepts used throughout the domain include:
+Shared concepts include:
 
 - WorkflowStatus
 - TaskStatus
@@ -212,7 +268,13 @@ These shared enumerations provide a consistent language across the Application a
 domain/
 │
 ├── common/
-│   └── enums.py
+│   ├── enums.py
+│   └── identifiers.py
+│
+├── execution_runtime/
+│   ├── task_context.py
+│   ├── task_result.py
+│   └── task_output.py
 │
 ├── workflow_definitions/
 │   ├── workflow_definition.py
@@ -237,24 +299,23 @@ The Domain Layer sits at the center of the architecture.
                     │
                     ▼
              Application
-            ↙           ↘
-      Persistence      Queue
-                    │
-                    ▼
-                 Domain
+          ↙     ↓      ↘
+Persistence Queue Plugins
+          \      |      /
+               Domain
 ```
 
 Application services coordinate business operations using domain objects.
 
-Persistence reconstructs and stores domain objects.
+Persistence reconstructs and stores persisted domain objects.
+
+Task plugins consume TaskContext and produce TaskResult.
 
 Infrastructure layers depend on the domain, but the domain depends on no infrastructure.
 
 ---
 
 # Future Evolution
-
-The Domain Layer is intentionally designed to evolve without affecting higher architectural layers.
 
 Potential future additions include:
 
