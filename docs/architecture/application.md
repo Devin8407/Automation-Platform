@@ -116,6 +116,21 @@ Public capabilities include:
 
 Business validation occurs internally during creation and update.
 
+### Workflow Definition Lifecycle
+
+Workflow definitions cannot be modified or deleted while they have active workflow executions.
+
+When modifying or deleting a workflow definition:
+
+1. Disable the workflow.
+2. Wait for all active workflow executions to complete.
+3. Apply the modification or deletion.
+4. Re-enable the workflow (if modified).
+
+This guarantees that every workflow execution completes against the same workflow definition from which it was created.
+
+These lifecycle rules are enforced by the Application Layer before any persistence operations occur.
+
 ---
 
 ## Workflow Executions

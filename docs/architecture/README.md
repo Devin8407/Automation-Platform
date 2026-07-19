@@ -18,11 +18,12 @@ For someone new to the project, the recommended reading order is:
 2. [Execution Model](execution-model.md)
 3. [Application Layer](application.md)
 4. [Persistence Layer](persistence.md)
-5. [Queue Layer](queue.md)
-6. [Plugins Layer](plugins.md)
-7. [Project Structure](project-structure.md)
-8. [Data Model](data-model.md)
-9. [Domain Models](domain.md)
+5. [Database Schema](database-schema.md)
+6. [Queue Layer](queue.md)
+7. [Plugins Layer](plugins.md)
+8. [Project Structure](project-structure.md)
+9. [Data Model](data-model.md)
+10. [Domain Models](domain.md)
 
 ---
 

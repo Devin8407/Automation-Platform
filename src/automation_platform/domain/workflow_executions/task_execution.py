@@ -33,7 +33,7 @@ class TaskExecution:
 
     retry_count: int = 0
 
-    output: TaskOutput | None
+    output: TaskOutput | None = None
 
     error_message: str | None = None
 

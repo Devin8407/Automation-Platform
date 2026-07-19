@@ -14,6 +14,7 @@ Documentation describing the overall design of the system.
 
 - [Architecture README](architecture/README.md)
 - [Architecture Overview](architecture/overview.md)
+- [Database Schema](architecture/database-schema.md)
 - [Execution Model](architecture/execution-model.md)
 - [Application Layer](architecture/application.md)
 - [Project Structure](architecture/project-structure.md)

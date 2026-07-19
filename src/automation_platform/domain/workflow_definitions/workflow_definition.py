@@ -20,6 +20,7 @@ class WorkflowDefinition:
     """Reusable definition of an automation workflow."""
 
     id: UUID
+
     name: str
     description: str = ""
 
