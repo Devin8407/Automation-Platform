@@ -18,7 +18,7 @@ class TriggerDefinition:
 
     id: UUID
 
-    type: str
+    plugin_type: str
 
     configuration: dict[str, Any] = field(default_factory=dict)
 

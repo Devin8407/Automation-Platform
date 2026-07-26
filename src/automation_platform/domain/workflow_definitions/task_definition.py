@@ -18,7 +18,7 @@ class TaskDefinition:
 
     id: UUID
 
-    type: str
+    plugin_type: str
 
     key: str
 
