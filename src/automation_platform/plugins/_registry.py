@@ -6,8 +6,9 @@ from abc import ABC
 from typing import ClassVar, Generic, TypeVar
 
 from ._discovery import discover_plugins
+from ._plugin import Plugin
 
-T = TypeVar("T")
+T = TypeVar("T", bound=Plugin)
 
 
 class PluginRegistry(Generic[T], ABC):

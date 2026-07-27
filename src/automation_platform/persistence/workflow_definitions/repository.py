@@ -7,14 +7,15 @@ from __future__ import annotations
 from collections import defaultdict
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from automation_platform.domain.workflow_definitions import WorkflowDefinition
 
-from ._mapper import WorkflowDefinitionMapper
+from ._mapper import TaskDefinitionModel, WorkflowDefinitionMapper
 from ._model import (
     TaskDefinitionDependencyModel,
+    TriggerDefinitionModel,
     WorkflowDefinitionModel,
 )
 
@@ -74,21 +75,10 @@ class WorkflowDefinitionRepository:
         """
 
         workflow_model = WorkflowDefinitionMapper.workflow_to_model(workflow_definition)
-
         self._session.merge(workflow_model)
 
-        for task in workflow_definition.task_definitions:
-            self._session.merge(
-                WorkflowDefinitionMapper.task_to_model(workflow_definition.id, task)
-            )
-
-            for dependency in WorkflowDefinitionMapper.dependencies_to_models(task):
-                self._session.merge(dependency)
-
-        for trigger in workflow_definition.trigger_definitions:
-            self._session.merge(
-                WorkflowDefinitionMapper.trigger_to_model(workflow_definition.id, trigger)
-            )
+        self._synchronize_tasks(workflow_definition)
+        self._synchronize_triggers(workflow_definition)
 
     def delete(self, workflow_definition_id: UUID) -> None:
         """Delete a workflow definition.
@@ -114,8 +104,11 @@ class WorkflowDefinitionRepository:
 
         rows = self._session.scalars(
             select(TaskDefinitionDependencyModel)
-            .join(WorkflowDefinitionModel.task_definitions)
-            .where(WorkflowDefinitionModel.id == workflow_definition_id)
+            .join(
+                TaskDefinitionModel,
+                TaskDefinitionDependencyModel.task_definition_id == TaskDefinitionModel.id,
+            )
+            .where(TaskDefinitionModel.workflow_definition_id == workflow_definition_id)
         )
 
         lookup: defaultdict[UUID, list[UUID]] = defaultdict(list)
@@ -124,3 +117,58 @@ class WorkflowDefinitionRepository:
             lookup[row.task_definition_id].append(row.depends_on_task_definition_id)
 
         return dict(lookup)
+
+    def _synchronize_tasks(
+        self,
+        workflow_definition: WorkflowDefinition,
+    ) -> None:
+        """Synchronize task definitions and dependencies."""
+
+        current_task_ids = {task.id for task in workflow_definition.task_definitions}
+
+        self._session.execute(
+            delete(TaskDefinitionModel).where(
+                TaskDefinitionModel.workflow_definition_id == workflow_definition.id,
+                TaskDefinitionModel.id.not_in(current_task_ids),
+            )
+        )
+
+        for task in workflow_definition.task_definitions:
+            self._session.merge(
+                WorkflowDefinitionMapper.task_to_model(
+                    workflow_definition.id,
+                    task,
+                )
+            )
+
+            self._session.execute(
+                delete(TaskDefinitionDependencyModel).where(
+                    TaskDefinitionDependencyModel.task_definition_id == task.id
+                )
+            )
+
+            for dependency in WorkflowDefinitionMapper.dependencies_to_models(task):
+                self._session.merge(dependency)
+
+    def _synchronize_triggers(
+        self,
+        workflow_definition: WorkflowDefinition,
+    ) -> None:
+        """Synchronize trigger definitions."""
+
+        current_trigger_ids = {trigger.id for trigger in workflow_definition.trigger_definitions}
+
+        self._session.execute(
+            delete(TriggerDefinitionModel).where(
+                TriggerDefinitionModel.workflow_definition_id == workflow_definition.id,
+                TriggerDefinitionModel.id.not_in(current_trigger_ids),
+            )
+        )
+
+        for trigger in workflow_definition.trigger_definitions:
+            self._session.merge(
+                WorkflowDefinitionMapper.trigger_to_model(
+                    workflow_definition.id,
+                    trigger,
+                )
+            )

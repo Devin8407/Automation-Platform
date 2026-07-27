@@ -12,13 +12,14 @@ from automation_platform.persistence.database import (
     create_sqlalchemy_engine,
 )
 
-TEST_DATABASE_URL = "sqlite:///:memory:"
+TEST_DATABASE_URL = "postgresql+psycopg://automation:password@localhost:5432/automation_test"
 
 
 @pytest.fixture(scope="session")
 def engine() -> Generator[Engine, None, None]:
     engine = create_sqlalchemy_engine(TEST_DATABASE_URL, echo_sql=False)
 
+    Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
 
     yield engine

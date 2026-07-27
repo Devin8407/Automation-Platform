@@ -12,7 +12,6 @@ from typing import Self
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from ..task_executions.repository import TaskExecutionRepository
 from ..workflow_definitions.repository import WorkflowDefinitionRepository
 from ..workflow_executions.repository import WorkflowExecutionRepository
 from .unit_of_work import UnitOfWork
@@ -28,7 +27,6 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
 
         self.workflow_definitions = WorkflowDefinitionRepository(session)
         self.workflow_executions = WorkflowExecutionRepository(session)
-        self.task_executions = TaskExecutionRepository(session)
 
     def commit(self) -> None:
         """Commit the current transaction."""

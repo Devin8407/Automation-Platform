@@ -13,7 +13,6 @@ def test_factory_creates_unit_of_work(uow_factory: SQLAlchemyUnitOfWorkFactory) 
 def test_uow_constructs_repositories(uow) -> None:
     assert uow.workflow_definitions is not None
     assert uow.workflow_executions is not None
-    assert uow.task_executions is not None
 
 
 def test_uow_context_manager(uow_factory: SQLAlchemyUnitOfWorkFactory) -> None:

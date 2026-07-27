@@ -28,7 +28,7 @@ class WorkflowExecution:
 
     task_executions: list[TaskExecution] = field(default_factory=list)
 
-    created_at: datetime = field(default_factory=datetime.now(UTC))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None
     completed_at: datetime | None = None
 

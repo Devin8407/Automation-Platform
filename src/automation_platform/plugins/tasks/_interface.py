@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import ClassVar
+from abc import abstractmethod
 
 from ...domain import TaskContext, TaskOutput
+from .._plugin import Plugin
 
 
-class Task(ABC):
+class Task(Plugin):
     """
     Base interface for workflow task plugins.
     """
-
-    plugin_type: ClassVar[str]
 
     @abstractmethod
     def execute(self, context: TaskContext) -> TaskOutput:

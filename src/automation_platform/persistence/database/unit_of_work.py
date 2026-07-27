@@ -3,7 +3,6 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Protocol, Self
 
-from ..task_executions.repository import TaskExecutionRepository
 from ..workflow_definitions.repository import WorkflowDefinitionRepository
 from ..workflow_executions.repository import WorkflowExecutionRepository
 
@@ -15,7 +14,6 @@ class UnitOfWork(Protocol):
 
     workflow_definitions: WorkflowDefinitionRepository
     workflow_executions: WorkflowExecutionRepository
-    task_executions: TaskExecutionRepository
 
     def commit(self) -> None: ...
 

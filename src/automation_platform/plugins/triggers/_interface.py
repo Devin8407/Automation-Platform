@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections.abc import Mapping
-from typing import Any, ClassVar
+from typing import Any
+
+from .._plugin import Plugin
 
 
-class Trigger(ABC):
+class Trigger(Plugin):
     """
     Base interface for workflow trigger plugins.
     """
-
-    plugin_type: ClassVar[str]
 
     @abstractmethod
     def is_ready(self, configuration: Mapping[str, Any]) -> bool:
