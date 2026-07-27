@@ -22,3 +22,4 @@ The purpose of ADRs is to preserve architectural reasoning rather than simply re
 - [**ADR-007:** Domain Model Independent of Persistence](ADR-007-domain-model-independent-of-persistence.md)
 - [**ADR-008:** Unit of Work for transaction Management](ADR-008-unit-of-work-for-transaction-management.md)
 - [**ADR-009:** Plugin Communication through Domain Execution Models](ADR-009-plugin-communication-through-domain-execution-models.md)
+- [**ADR-010:** Compiled Workflow Executions](ADR-010-compiled-workflow-executions.md)

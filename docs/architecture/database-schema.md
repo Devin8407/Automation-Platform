@@ -27,6 +27,7 @@ The schema follows several architectural principles.
 - Workflow definitions and workflow executions are stored independently.
 - Relationships are normalized.
 - UUIDs are used for all entity identifiers.
+- PostgreSQL-native types are used where appropriate.
 - Plugin-defined configuration is stored using JSONB.
 - Execution history remains immutable once created.
 
@@ -50,7 +51,7 @@ erDiagram
         UUID id PK
         UUID workflow_definition_id FK
         string key
-        string type
+        string plugin_type
         jsonb configuration
         int max_retries
     }
@@ -65,7 +66,7 @@ erDiagram
 
         UUID id PK
         UUID workflow_definition_id FK
-        string type
+        string plugin_type
         jsonb configuration
         boolean enabled
     }
@@ -74,11 +75,11 @@ erDiagram
 
         UUID id PK
         UUID workflow_definition_id FK
-        string status
+        enum status
         int remaining_tasks
-        timestamp created_at
-        timestamp started_at
-        timestamp completed_at
+        timestamptz created_at
+        timestamptz started_at
+        timestamptz completed_at
     }
 
     TASK_EXECUTION {
@@ -86,13 +87,14 @@ erDiagram
         UUID id PK
         UUID workflow_execution_id FK
         UUID task_definition_id FK
-        string status
+        enum status
         int retry_count
         int remaining_dependencies
+        UUID[] child_task_ids
         jsonb output
         string error_message
-        timestamp started_at
-        timestamp completed_at
+        timestamptz started_at
+        timestamptz completed_at
     }
 
     WORKFLOW_DEFINITION ||--o{ TASK_DEFINITION : owns
@@ -153,7 +155,7 @@ Represents one reusable task within a workflow.
 | id | Unique task identifier. |
 | workflow_definition_id | Owning workflow definition. |
 | key | Workflow-local task key. |
-| type | Registered task plugin type. |
+| plugin_type | Registered task plugin type. |
 | configuration | Plugin configuration (JSONB). |
 | max_retries | Maximum retry attempts. |
 
@@ -209,7 +211,7 @@ Represents one trigger capable of starting a workflow.
 |---------|-------------|
 | id | Unique trigger identifier. |
 | workflow_definition_id | Owning workflow definition. |
-| type | Registered trigger plugin type. |
+| plugin_type | Registered trigger plugin type. |
 | configuration | Plugin configuration (JSONB). |
 | enabled | Whether this trigger is active. |
 
@@ -259,6 +261,7 @@ Represents one execution of a task definition.
 | status | Current task status. |
 | retry_count | Current retry count. |
 | remaining_dependencies | Number of unfinished parent tasks. |
+| child_task_ids | Cached child task identifiers used during workflow execution. |
 | output | Task output (JSONB). |
 | error_message | Failure information, if any. |
 | started_at | Time execution began. |
@@ -304,7 +307,23 @@ Deleting a workflow definition cascades to:
 - Trigger Definitions
 - Task Definition Dependency rows
 
-Workflow Executions remain independent and preserve execution history.
+Workflow executions and task executions remain independent.
+
+Deleting a workflow definition does **not** delete historical execution data.
+
+---
+
+# PostgreSQL Usage
+
+The Persistence Layer intentionally uses PostgreSQL-specific data types where they provide stronger typing or better performance.
+
+Current PostgreSQL types include:
+
+- UUID
+- UUID arrays
+- JSONB
+
+The persistence implementation targets PostgreSQL rather than generic SQL databases.
 
 ---
 
@@ -337,15 +356,11 @@ The Application Layer reconstructs these objects from persisted workflow state d
 
 ## Workflow Structure
 
-Workflow structure exists only within workflow definitions.
+Workflow structure is defined by workflow definitions.
 
-Task executions never duplicate dependency relationships.
+When a workflow execution is created, immutable runtime scheduling information—such as cached child task identifiers—is copied into task executions to simplify worker execution.
 
-Execution relationships are reconstructed from:
-
-- Workflow Definition
-- Task Definition Dependency
-- Task Execution
+Workflow definitions remain the authoritative source of workflow structure.
 
 ---
 
@@ -388,4 +403,5 @@ Potential future enhancements include:
 - Auditing
 - Optimistic locking
 - Read replicas
+- Execution graph optimization
 - Additional indexes

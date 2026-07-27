@@ -306,6 +306,7 @@ Significant architectural decisions are documented using Architecture Decision R
 - [**ADR-005:** Separate Definitions from Execution State](../adr/ADR-005-separate-definitions-from-execution-state.md)
 - [**ADR-006:** Dependency Based Workflow Scheduling](../adr/ADR-006-dependency-based-workflow-scheduling.md)
 - [**ADR-008:** Unit of Work for transaction Management](../adr/ADR-008-unit-of-work-for-transaction-management.md)
+- [**ADR-010:** Compiled Workflow Executions](../adr/ADR-010-compiled-workflow-executions.md)
 
 These documents explain the context, alternatives considered, tradeoffs, and consequences behind each decision.
 

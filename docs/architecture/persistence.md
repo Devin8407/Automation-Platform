@@ -16,7 +16,6 @@ The Persistence Layer is responsible for:
 
 - Persisting workflow definitions
 - Persisting workflow executions
-- Persisting task executions
 - Reconstructing domain objects from stored data
 - Managing database sessions
 - Defining transactional boundaries through the Unit of Work
@@ -36,10 +35,11 @@ The Persistence Layer is **not** responsible for:
 
 The Persistence Layer follows several architectural principles.
 
-- Business logic remains outside the persistence layer.
+- Business logic remains outside the Persistence Layer.
 - Database implementation details are hidden behind repositories.
 - Domain objects remain independent of SQLAlchemy.
-- Repository APIs operate on domain objects rather than SQL rows.
+- Repository APIs operate on domain objects rather than database rows.
+- Repositories persist aggregate roots rather than individual entities.
 - Transactions are scoped to business operations.
 - SQLAlchemy models are implementation details.
 
@@ -54,7 +54,9 @@ Application["Application Service"]
 
 UOW["Unit of Work"]
 
-Repo["Repositories"]
+Repository["Repository"]
+
+Mapper["Mapper"]
 
 Session["SQLAlchemy Session"]
 
@@ -63,11 +65,31 @@ Engine["SQLAlchemy Engine"]
 DB[(PostgreSQL)]
 
 Application --> UOW
-UOW --> Repo
-Repo --> Session
+UOW --> Repository
+Repository --> Mapper
+Repository --> Session
 Session --> Engine
 Engine --> DB
 ```
+
+---
+
+# Aggregate Persistence
+
+Repositories persist complete aggregate roots rather than individual entities.
+
+Workflow definitions own:
+
+- Task Definitions
+- Trigger Definitions
+
+Workflow executions own:
+
+- Task Executions
+
+Repositories reconstruct complete aggregates before returning them to the Application Layer.
+
+Child entities are never loaded independently.
 
 ---
 
@@ -83,7 +105,7 @@ Each business operation creates a new Unit of Work.
 
 The Unit of Work creates a SQLAlchemy Session.
 
-The Session borrows a connection from the Engine's connection pool, performs the required database operations, commits or rolls back the transaction, and then returns the connection to the pool before closing.
+The Session borrows a connection from the Engine's connection pool, performs the required database operations, commits or rolls back the transaction, returns the connection to the pool, and then closes.
 
 ---
 
@@ -91,19 +113,20 @@ The Session borrows a connection from the Engine's connection pool, performs the
 
 Repositories provide the public persistence API.
 
-Each repository owns the persistence responsibilities for a single domain concept.
+Each repository owns the persistence responsibilities for a single aggregate.
 
-Example repositories include:
+Current repositories include:
 
 - WorkflowDefinitionRepository
 - WorkflowExecutionRepository
-- TaskExecutionRepository
 
 Repositories expose persistence operations such as:
 
-- get(...)
+- load(...)
 - save(...)
 - delete(...)
+
+Repositories may expose additional aggregate-specific lookup operations when required.
 
 Repositories never expose SQLAlchemy models to the Application Layer.
 
@@ -117,8 +140,11 @@ Persistence distinguishes between three representations of data.
 
 Represents business concepts used throughout the Application Layer.
 
-Example:
+Examples include:
 
+- WorkflowDefinition
+- TaskDefinition
+- TriggerDefinition
 - WorkflowExecution
 - TaskExecution
 
@@ -139,7 +165,7 @@ Models define:
 - Relationships
 - Constraints
 
-These models exist solely within the Persistence Layer.
+SQLAlchemy models exist solely within the Persistence Layer.
 
 ---
 
@@ -150,9 +176,11 @@ Mappers translate between:
 - Domain Objects
 - SQLAlchemy Models
 
-This translation remains completely hidden from the Application Layer.
+Each repository contains dedicated mappers responsible only for object translation.
 
-Task definition configuration and task execution outputs are stored as JSONB documents because their structure is plugin-defined.
+Repositories coordinate aggregate reconstruction while mappers perform no database operations.
+
+Task and trigger configuration, along with task outputs, are persisted without interpretation by the Persistence Layer.
 
 ---
 
@@ -160,7 +188,7 @@ Task definition configuration and task execution outputs are stored as JSONB doc
 
 The Unit of Work defines the transactional boundary for a single business operation.
 
-Rather than allowing individual repositories to manage transactions independently, repositories participating in the same business operation share a single SQLAlchemy Session.
+Rather than allowing repositories to manage transactions independently, repositories participating in the same business operation share a single SQLAlchemy Session.
 
 This ensures that either all database changes succeed together or all changes are rolled back together.
 
@@ -170,7 +198,7 @@ Example business operations include:
 - Process Task
 - Cancel Workflow
 
-Each operation creates a fresh Unit of Work.
+Each business operation creates a fresh Unit of Work.
 
 ---
 
@@ -195,46 +223,53 @@ Each process maintains its own Engine and connection pool while communicating wi
 persistence/
 │
 ├── database/
+│   ├── __init__.py
 │   ├── engine.py
 │   ├── session.py
-│   └── unit_of_work.py
+│   ├── unit_of_work.py
+│   └── ...
 │
 ├── workflow_definitions/
+│   ├── __init__.py
 │   ├── repository.py
-│   ├── _model.py
-│   └── _mapper.py
+│   ├── _mapper.py
+│   └── _model.py
 │
 ├── workflow_executions/
+│   ├── __init__.py
 │   ├── repository.py
-│   ├── _model.py
-│   └── _mapper.py
+│   ├── _mapper.py
+│   └── _model.py
 │
-└── task_executions/
-    ├── repository.py
-    ├── _model.py
-    └── _mapper.py
+└── __init__.py
 ```
 
 ---
 
 # Testing Strategy
 
-The Persistence Layer is tested independently from business logic.
+The Persistence Layer is tested independently from the Application Layer.
+
+## Unit Tests
 
 Unit tests validate:
 
-- Repository behavior
 - Object mapping
-- Transaction handling
+- Persistence infrastructure
+- Unit of Work behavior
+
+## Integration Tests
 
 Integration tests validate:
 
+- Repository behavior
 - SQLAlchemy behavior
 - PostgreSQL interaction
 - Database schema
-- Query correctness
+- Aggregate persistence
+- Transaction handling
 
-The Application Layer is tested separately using mocked or fake persistence implementations.
+The Application Layer is tested separately using fake or mocked persistence implementations when appropriate.
 
 ---
 
@@ -244,8 +279,9 @@ Potential future improvements include:
 
 - Optimized repository queries
 - Bulk operations
-- Read/write separation
+- Query optimization through eager loading
 - Database migrations
+- Read/write separation
 - Alternative persistence implementations
 - Distributed transaction support (if ever required)
 
