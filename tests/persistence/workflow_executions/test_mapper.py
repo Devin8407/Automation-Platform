@@ -108,6 +108,7 @@ def test_task_to_model(task_execution_factory) -> None:
     assert model.task_definition_id == task.task_definition_id
     assert model.status == task.status
     assert model.remaining_dependencies == task.remaining_dependencies
+    assert model.parent_task_ids == task.parent_task_ids
     assert model.child_task_ids == task.child_task_ids
     assert model.retry_count == task.retry_count
     assert model.output == task.output
@@ -127,6 +128,7 @@ def test_task_to_domain(task_execution_factory) -> None:
         task_definition_id=task.task_definition_id,
         status=task.status,
         remaining_dependencies=task.remaining_dependencies,
+        parent_task_ids=task.parent_task_ids,
         child_task_ids=task.child_task_ids,
         retry_count=task.retry_count,
         output=task.output,

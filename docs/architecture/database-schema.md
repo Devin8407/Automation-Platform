@@ -90,6 +90,7 @@ erDiagram
         enum status
         int retry_count
         int remaining_dependencies
+        UUID[] parent_task_ids
         UUID[] child_task_ids
         jsonb output
         string error_message

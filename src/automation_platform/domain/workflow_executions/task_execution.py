@@ -29,6 +29,8 @@ class TaskExecution:
 
     remaining_dependencies: int = 0
 
+    parent_task_ids: list[UUID] = field(default_factory=list)
+
     child_task_ids: list[UUID] = field(default_factory=list)
 
     retry_count: int = 0

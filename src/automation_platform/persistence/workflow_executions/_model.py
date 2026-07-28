@@ -79,6 +79,10 @@ class TaskExecutionModel(Base):
 
     remaining_dependencies: Mapped[int] = mapped_column(Integer, nullable=False)
 
+    parent_task_ids: Mapped[list[UUID]] = mapped_column(
+        ARRAY(PG_UUID(as_uuid=True)), nullable=False
+    )
+
     child_task_ids: Mapped[list[UUID]] = mapped_column(ARRAY(PG_UUID(as_uuid=True)), nullable=False)
 
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False)
