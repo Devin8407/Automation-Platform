@@ -23,3 +23,7 @@ The purpose of ADRs is to preserve architectural reasoning rather than simply re
 - [**ADR-008:** Unit of Work for transaction Management](ADR-008-unit-of-work-for-transaction-management.md)
 - [**ADR-009:** Plugin Communication through Domain Execution Models](ADR-009-plugin-communication-through-domain-execution-models.md)
 - [**ADR-010:** Compiled Workflow Executions](ADR-010-compiled-workflow-executions.md)
+- [**ADR-011:** Transition Oriented Persistence](ADR-011-transition-oriented-persistence.md)
+- [**ADR-012:** Lease Based Queue Ownership](ADR-012-lease-based-queue-ownership.md)
+- [**ADR-013:** Eventual Queue Consistency Through Reconciliation](ADR-013-eventual-queue-consistency-through-reconciliation.md)
+- [**ADR-014:** Conditional SQL State Transitions](ADR-014-conditional-sql-state-transitions.md)

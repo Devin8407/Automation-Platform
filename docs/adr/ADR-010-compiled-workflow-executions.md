@@ -20,21 +20,18 @@ A decision was required regarding whether workers should dynamically reconstruct
 
 ## Decision
 
-Workflow executions will contain a compiled representation of the execution graph.
+Workflow executions snapshot all runtime information required for execution, including:
 
-When a WorkflowExecution is created, the Application Layer computes runtime scheduling information for every TaskExecution, including:
+- Task dependency counts
+- Child task relationships
+- Retry policy
+- Runtime task state
 
-- Remaining dependency count
-- Child task identifiers
-- Initial execution state
+Workers should never need to consult WorkflowDefinitions during normal execution.
 
-This information becomes part of the persisted WorkflowExecution.
+WorkflowDefinitions remain immutable specifications.
 
-Workers perform scheduling decisions exclusively using execution state rather than traversing the WorkflowDefinition.
-
-WorkflowDefinition remains the authoritative description of the workflow structure.
-
-WorkflowExecution stores a runtime projection optimized for execution.
+WorkflowExecutions represent the compiled runtime projection of those specifications.
 
 ---
 
@@ -82,6 +79,8 @@ WorkflowExecution stores a runtime projection optimized for execution.
 - Workers operate entirely on execution data.
 - Scheduling logic becomes straightforward and efficient.
 - Persistence naturally stores the execution graph needed during runtime.
+- Retry policy becomes independent of later WorkflowDefinition changes.
+- Workers execute entirely from WorkflowExecution state.
 
 ### Negative
 
