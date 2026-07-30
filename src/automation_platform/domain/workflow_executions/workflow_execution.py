@@ -31,19 +31,3 @@ class WorkflowExecution:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None
     completed_at: datetime | None = None
-
-    remaining_tasks: int = 0
-
-    def is_finished(self) -> bool:
-        """Return whether this execution has reached a terminal state."""
-
-        return self.status in {
-            WorkflowStatus.COMPLETED,
-            WorkflowStatus.FAILED,
-            WorkflowStatus.CANCELLED,
-        }
-
-    def has_remaining_tasks(self) -> bool:
-        """Return whether unfinished tasks remain."""
-
-        return self.remaining_tasks > 0

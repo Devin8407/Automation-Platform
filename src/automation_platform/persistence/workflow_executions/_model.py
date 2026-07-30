@@ -42,12 +42,8 @@ class WorkflowExecutionModel(Base):
 
     status: Mapped[WorkflowStatus] = mapped_column(Enum(WorkflowStatus), nullable=False)
 
-    remaining_tasks: Mapped[int] = mapped_column(Integer, nullable=False)
-
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     task_executions: Mapped[list[TaskExecutionModel]] = relationship(
@@ -68,7 +64,6 @@ class TaskExecutionModel(Base):
         nullable=False,
         index=True,
     )
-
     task_definition_id: Mapped[UUID] = mapped_column(
         ForeignKey("task_definitions.id"),
         nullable=False,
@@ -80,19 +75,21 @@ class TaskExecutionModel(Base):
     remaining_dependencies: Mapped[int] = mapped_column(Integer, nullable=False)
 
     parent_task_ids: Mapped[list[UUID]] = mapped_column(
-        ARRAY(PG_UUID(as_uuid=True)), nullable=False
+        ARRAY(PG_UUID(as_uuid=True)),
+        nullable=False,
+    )
+    child_task_ids: Mapped[list[UUID]] = mapped_column(
+        ARRAY(PG_UUID(as_uuid=True)),
+        nullable=False,
     )
 
-    child_task_ids: Mapped[list[UUID]] = mapped_column(ARRAY(PG_UUID(as_uuid=True)), nullable=False)
-
-    retry_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    remaining_tries: Mapped[int] = mapped_column(Integer, nullable=False)
 
     output: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     error_message: Mapped[str | None] = mapped_column(String)
 
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     workflow_execution: Mapped[WorkflowExecutionModel] = relationship(

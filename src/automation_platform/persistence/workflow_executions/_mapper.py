@@ -32,21 +32,20 @@ class WorkflowExecutionMapper:
         Returns:
             SQLAlchemy workflow execution model.
         """
-        model = WorkflowExecutionModel(
-            id=workflow.id,
-            workflow_definition_id=workflow.workflow_definition_id,
-            status=workflow.status,
-            remaining_tasks=workflow.remaining_tasks,
-            created_at=workflow.created_at,
-            started_at=workflow.started_at,
-            completed_at=workflow.completed_at,
-        )
 
-        model.task_executions = [
+        task_executions = [
             WorkflowExecutionMapper.task_to_model(task) for task in workflow.task_executions
         ]
 
-        return model
+        return WorkflowExecutionModel(
+            id=workflow.id,
+            workflow_definition_id=workflow.workflow_definition_id,
+            status=workflow.status,
+            created_at=workflow.created_at,
+            started_at=workflow.started_at,
+            completed_at=workflow.completed_at,
+            task_executions=task_executions,
+        )
 
     @staticmethod
     def workflow_to_domain(
@@ -62,6 +61,7 @@ class WorkflowExecutionMapper:
         Returns:
             Domain workflow execution.
         """
+
         return WorkflowExecution(
             id=model.id,
             workflow_definition_id=model.workflow_definition_id,
@@ -70,7 +70,6 @@ class WorkflowExecutionMapper:
             created_at=model.created_at,
             started_at=model.started_at,
             completed_at=model.completed_at,
-            remaining_tasks=model.remaining_tasks,
         )
 
     @staticmethod
@@ -84,6 +83,7 @@ class WorkflowExecutionMapper:
         Returns:
             SQLAlchemy task execution model.
         """
+
         return TaskExecutionModel(
             id=task.id,
             workflow_execution_id=task.workflow_execution_id,
@@ -92,7 +92,7 @@ class WorkflowExecutionMapper:
             remaining_dependencies=task.remaining_dependencies,
             parent_task_ids=task.parent_task_ids,
             child_task_ids=task.child_task_ids,
-            retry_count=task.retry_count,
+            remaining_tries=task.remaining_tries,
             output=(None if task.output is None else task.output.values),
             error_message=task.error_message,
             started_at=task.started_at,
@@ -109,6 +109,7 @@ class WorkflowExecutionMapper:
         Returns:
             Domain task execution.
         """
+
         return TaskExecution(
             id=model.id,
             workflow_execution_id=model.workflow_execution_id,
@@ -117,7 +118,7 @@ class WorkflowExecutionMapper:
             remaining_dependencies=model.remaining_dependencies,
             parent_task_ids=model.parent_task_ids,
             child_task_ids=model.child_task_ids,
-            retry_count=model.retry_count,
+            remaining_tries=model.remaining_tries,
             output=(None if model.output is None else TaskOutput(values=model.output)),
             error_message=model.error_message,
             started_at=model.started_at,

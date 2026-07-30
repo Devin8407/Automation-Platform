@@ -17,7 +17,6 @@ class TaskStatus(Enum):
     """Current state of a task execution."""
 
     PENDING = auto()
-    QUEUED = auto()
     RUNNING = auto()
     COMPLETED = auto()
     FAILED = auto()

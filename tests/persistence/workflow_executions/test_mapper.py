@@ -55,7 +55,6 @@ def test_workflow_to_model(workflow_execution_factory) -> None:
     assert model.id == workflow.id
     assert model.workflow_definition_id == workflow.workflow_definition_id
     assert model.status == workflow.status
-    assert model.remaining_tasks == workflow.remaining_tasks
     assert model.created_at == workflow.created_at
     assert model.started_at == workflow.started_at
     assert model.completed_at == workflow.completed_at
@@ -68,7 +67,6 @@ def test_workflow_to_domain(task_execution_factory) -> None:
         id=uuid4(),
         workflow_definition_id=uuid4(),
         status="PENDING",
-        remaining_tasks=3,
         created_at=task_execution_factory().started_at,
         started_at=None,
         completed_at=None,
@@ -88,7 +86,6 @@ def test_workflow_to_domain(task_execution_factory) -> None:
     assert workflow.workflow_definition_id == model.workflow_definition_id
     assert workflow.status == model.status
     assert workflow.task_executions == task_executions
-    assert workflow.remaining_tasks == model.remaining_tasks
     assert workflow.created_at == model.created_at
     assert workflow.started_at == model.started_at
     assert workflow.completed_at == model.completed_at
@@ -110,7 +107,7 @@ def test_task_to_model(task_execution_factory) -> None:
     assert model.remaining_dependencies == task.remaining_dependencies
     assert model.parent_task_ids == task.parent_task_ids
     assert model.child_task_ids == task.child_task_ids
-    assert model.retry_count == task.retry_count
+    assert model.remaining_tries == task.remaining_tries
     assert model.output == task.output
     assert model.error_message == task.error_message
     assert model.started_at == task.started_at
@@ -130,7 +127,7 @@ def test_task_to_domain(task_execution_factory) -> None:
         remaining_dependencies=task.remaining_dependencies,
         parent_task_ids=task.parent_task_ids,
         child_task_ids=task.child_task_ids,
-        retry_count=task.retry_count,
+        remaining_tries=task.remaining_tries,
         output=task.output,
         error_message=task.error_message,
         started_at=task.started_at,

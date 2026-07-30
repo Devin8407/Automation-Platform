@@ -15,7 +15,7 @@ The database stores:
 - Workflow executions
 - Task executions
 
-The database intentionally does **not** persist transient runtime objects such as `TaskContext` or `TaskResult`.
+The database intentionally does **not** persist transient runtime objects such as `TaskContext`.
 
 ---
 
@@ -29,6 +29,7 @@ The schema follows several architectural principles.
 - UUIDs are used for all entity identifiers.
 - PostgreSQL-native types are used where appropriate.
 - Plugin-defined configuration is stored using JSONB.
+- Runtime scheduling metadata is cached within task executions.
 - Execution history remains immutable once created.
 
 ---
@@ -76,7 +77,6 @@ erDiagram
         UUID id PK
         UUID workflow_definition_id FK
         enum status
-        int remaining_tasks
         timestamptz created_at
         timestamptz started_at
         timestamptz completed_at
@@ -88,7 +88,7 @@ erDiagram
         UUID workflow_execution_id FK
         UUID task_definition_id FK
         enum status
-        int retry_count
+        int remaining_tries
         int remaining_dependencies
         UUID[] parent_task_ids
         UUID[] child_task_ids
@@ -116,8 +116,6 @@ erDiagram
 ---
 
 # Table Specifications
-
----
 
 ## Workflow Definition
 
@@ -235,10 +233,9 @@ Represents one execution of a workflow definition.
 | id | Unique workflow execution identifier. |
 | workflow_definition_id | Workflow definition being executed. |
 | status | Current workflow status. |
-| remaining_tasks | Number of unfinished tasks. |
-| created_at | Execution creation time. |
-| started_at | Time execution began. |
-| completed_at | Time execution completed. |
+| created_at | Time the execution was created. |
+| started_at | Time the workflow began executing. |
+| completed_at | Time the workflow finished. |
 
 ### Primary Key
 
@@ -259,14 +256,15 @@ Represents one execution of a task definition.
 | id | Unique task execution identifier. |
 | workflow_execution_id | Owning workflow execution. |
 | task_definition_id | Task definition being executed. |
-| status | Current task status. |
-| retry_count | Current retry count. |
+| status | Current execution state. |
+| remaining_tries | Number of retry attempts remaining. |
 | remaining_dependencies | Number of unfinished parent tasks. |
-| child_task_ids | Cached child task identifiers used during workflow execution. |
-| output | Task output (JSONB). |
+| parent_task_ids | Cached identifiers of parent task executions. |
+| child_task_ids | Cached identifiers of child task executions. |
+| output | Serialized task output (JSONB). |
 | error_message | Failure information, if any. |
-| started_at | Time execution began. |
-| completed_at | Time execution completed. |
+| started_at | Time task execution began. |
+| completed_at | Time task execution finished. |
 
 ### Primary Key
 
@@ -283,13 +281,14 @@ Represents one execution of a task definition.
 
 Primary keys and unique constraints automatically create indexes.
 
-Additional indexes are defined for:
+Additional indexes exist for:
 
 - task_definition.workflow_definition_id
 - trigger_definition.workflow_definition_id
 - workflow_execution.workflow_definition_id
 - task_execution.workflow_execution_id
 - task_execution.task_definition_id
+- task_execution.status
 
 Additional indexes may be introduced as query patterns evolve.
 
@@ -301,6 +300,7 @@ Workflow Definition owns:
 
 - Task Definitions
 - Trigger Definitions
+- Dependency rows
 
 Deleting a workflow definition cascades to:
 
@@ -308,48 +308,47 @@ Deleting a workflow definition cascades to:
 - Trigger Definitions
 - Task Definition Dependency rows
 
-Workflow executions and task executions remain independent.
+Workflow executions remain historical records.
 
-Deleting a workflow definition does **not** delete historical execution data.
+Deleting a workflow definition does **not** delete existing workflow executions or task executions.
 
 ---
 
 # PostgreSQL Usage
 
-The Persistence Layer intentionally uses PostgreSQL-specific data types where they provide stronger typing or better performance.
+The persistence layer intentionally targets PostgreSQL.
 
-Current PostgreSQL types include:
+Current PostgreSQL-specific types include:
 
 - UUID
-- UUID arrays
+- UUID[]
 - JSONB
 
-The persistence implementation targets PostgreSQL rather than generic SQL databases.
+These provide stronger typing and efficient storage than portable SQL alternatives.
 
 ---
 
 # JSONB Usage
 
-Plugin-defined data is intentionally stored using JSONB.
+Plugin-defined data is intentionally stored without interpretation.
 
-Current JSONB columns:
+Current JSONB columns include:
 
 - TaskDefinition.configuration
 - TriggerDefinition.configuration
 - TaskExecution.output
 
-Persistence stores these values without interpreting their structure.
+The Persistence Layer serializes and deserializes these values but never interprets their structure.
 
 ---
 
 # Runtime Objects
 
-The following domain objects are intentionally not persisted:
+The following runtime objects are intentionally not persisted:
 
 - TaskContext
-- TaskResult
 
-The Application Layer reconstructs these objects from persisted workflow state during execution.
+The Application Layer reconstructs runtime execution state from persisted workflow and task executions.
 
 ---
 
@@ -357,30 +356,44 @@ The Application Layer reconstructs these objects from persisted workflow state d
 
 ## Workflow Structure
 
-Workflow structure is defined by workflow definitions.
+Workflow definitions define the workflow graph.
 
-When a workflow execution is created, immutable runtime scheduling information—such as cached child task identifiers—is copied into task executions to simplify worker execution.
+When a workflow execution is created, scheduling metadata required during execution is copied into each task execution.
 
-Workflow definitions remain the authoritative source of workflow structure.
+This includes:
+
+- parent task execution identifiers
+- child task execution identifiers
+- remaining dependency count
+- remaining retry count
+
+This avoids repeatedly traversing workflow definitions during execution.
 
 ---
 
 ## Dependency Representation
 
-Task dependencies are stored using a normalized relationship table rather than UUID arrays.
+Workflow definitions store dependencies in a normalized relationship table.
 
-Benefits include:
+Workflow executions cache dependency information directly inside task executions.
 
-- Referential integrity
-- Proper foreign keys
-- Normalized graph representation
-- Efficient graph traversal
+This separates immutable workflow structure from runtime scheduling state.
+
+---
+
+## Workflow Completion
+
+Workflow executions do not store a remaining task counter.
+
+Completion is determined by checking whether any task executions remain incomplete.
+
+This avoids synchronization issues while allowing completion to be computed atomically.
 
 ---
 
 ## Trigger Ownership
 
-Trigger definitions belong exclusively to one workflow definition.
+Trigger definitions belong exclusively to a single workflow definition.
 
 Workflows with identical schedules maintain independent trigger definitions.
 
@@ -392,17 +405,20 @@ Workflow executions permanently reference the workflow definition from which the
 
 Execution history is never rewritten.
 
+Only execution state changes over time.
+
 ---
 
 # Future Evolution
 
 Potential future enhancements include:
 
-- Workflow versioning
-- Workflow archival
-- Soft deletes
-- Auditing
-- Optimistic locking
-- Read replicas
-- Execution graph optimization
-- Additional indexes
+- workflow versioning
+- workflow archival
+- soft deletes
+- auditing
+- optimistic locking
+- additional indexes
+- partitioned execution history
+- read replicas
+- execution query optimization

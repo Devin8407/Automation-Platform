@@ -36,9 +36,9 @@ def task_execution_factory() -> Callable[..., TaskExecution]:
         task_definition_id: UUID | None = None,
         status: TaskStatus = TaskStatus.PENDING,
         remaining_dependencies: int = 0,
+        remaining_tries: int = 0,
         parent_task_ids: list[UUID] | None = None,
         child_task_ids: list[UUID] | None = None,
-        retry_count: int = 0,
         output: TaskOutput | None = None,
         error_message: str | None = None,
         started_at: datetime | None = None,
@@ -50,9 +50,9 @@ def task_execution_factory() -> Callable[..., TaskExecution]:
             task_definition_id=task_definition_id or uuid4(),
             status=status,
             remaining_dependencies=remaining_dependencies,
+            remaining_tries=remaining_tries,
             parent_task_ids=parent_task_ids or [],
             child_task_ids=child_task_ids or [],
-            retry_count=retry_count,
             output=output,
             error_message=error_message,
             started_at=started_at,
@@ -78,7 +78,6 @@ def workflow_execution_factory(
         created_at: datetime | None = None,
         started_at: datetime | None = None,
         completed_at: datetime | None = None,
-        remaining_tasks: int | None = None,
     ) -> WorkflowExecution:
 
         execution_id = id or uuid4()
@@ -113,9 +112,6 @@ def workflow_execution_factory(
             created_at=created_at or datetime.now(UTC),
             started_at=started_at,
             completed_at=completed_at,
-            remaining_tasks=(
-                remaining_tasks if remaining_tasks is not None else len(task_executions)
-            ),
         )
 
     return factory
