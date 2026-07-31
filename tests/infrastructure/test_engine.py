@@ -1,6 +1,6 @@
 from sqlalchemy import Engine
 
-from automation_platform.persistence.database import create_sqlalchemy_engine
+from automation_platform.infrastructure.database import create_sqlalchemy_engine
 
 
 def test_create_sqlalchemy_engine_returns_engine() -> None:

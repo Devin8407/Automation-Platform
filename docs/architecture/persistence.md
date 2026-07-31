@@ -296,10 +296,8 @@ persistence/
 │
 ├── database/
 │   ├── __init__.py
-│   ├── engine.py
-│   ├── session.py
-│   ├── unit_of_work.py
-│   └── ...
+│   ├── sqlalchemy_uow.py
+│   └── unit_of_work.py
 │
 ├── workflow_definitions/
 │   ├── __init__.py

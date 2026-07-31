@@ -22,8 +22,9 @@ For someone new to the project, the recommended reading order is:
 6. [Queue Layer](queue.md)
 7. [Plugins Layer](plugins.md)
 8. [Project Structure](project-structure.md)
-9. [Data Model](data-model.md)
-10. [Domain Models](domain.md)
+9. [Infrastructure.md](infrastructure.md)
+10. [Data Model](data-model.md)
+11. [Domain Models](domain.md)
 
 ---
 

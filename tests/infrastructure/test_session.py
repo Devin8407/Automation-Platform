@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session, sessionmaker
 
-from automation_platform.persistence.database import create_session_factory
+from automation_platform.infrastructure.database import create_session_factory
 
 
 def test_create_session_factory_returns_sessionmaker(engine) -> None:
