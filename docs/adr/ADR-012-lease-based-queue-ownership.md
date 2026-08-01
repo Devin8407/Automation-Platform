@@ -20,20 +20,28 @@ A decision was required regarding how queue ownership should be represented.
 
 ## Decision
 
-Queue ownership will be represented using renewable leases.
+## Decision
+
+Queue ownership is represented using renewable leases.
 
 Claiming work assigns:
 
-- worker identifier
-- claim token
-- claim timestamp
-- heartbeat timestamp
+- Worker identifier
+- Claim token
+- Claim timestamp
+- Heartbeat timestamp
 
-Workers periodically renew their lease using heartbeats.
+The claim token uniquely identifies the current lease owner and is regenerated whenever a task is claimed or reclaimed.
 
-If a lease expires, another worker may safely reclaim the task.
+Workers periodically renew their lease by updating the heartbeat timestamp.
 
-Every queue operation that modifies ownership validates the current claim token before performing any changes.
+If a lease expires, another worker may safely reclaim the task by obtaining a new lease and claim token.
+
+Every queue operation that modifies queue state—including heartbeat, release, and finish—validates both the task execution identifier and the current claim token before performing any changes.
+
+Queue operations whose claim validation fails become no-ops, preventing stale workers from modifying queue state after ownership has transferred.
+
+Queue ownership is intentionally temporary rather than permanent, allowing abandoned work to be recovered automatically while guaranteeing that at most one worker holds the active lease for a runnable task.
 
 ---
 

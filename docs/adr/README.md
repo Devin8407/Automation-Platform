@@ -27,3 +27,4 @@ The purpose of ADRs is to preserve architectural reasoning rather than simply re
 - [**ADR-012:** Lease Based Queue Ownership](ADR-012-lease-based-queue-ownership.md)
 - [**ADR-013:** Eventual Queue Consistency Through Reconciliation](ADR-013-eventual-queue-consistency-through-reconciliation.md)
 - [**ADR-014:** Conditional SQL State Transitions](ADR-014-conditional-sql-state-transitions.md)
+- [**ADR-015:** Shared Database Infrastructure](ADR-015-shared-database-infrastructure.md)

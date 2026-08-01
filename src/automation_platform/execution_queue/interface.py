@@ -20,7 +20,7 @@ class ExecutionQueue(Protocol):
         """Adds a task execution to the queue
 
         Args:
-            UUID: enqueuing task execution's id
+            task_execution_id: Identifier of the task execution to enqueue.
         """
 
         ...
@@ -62,6 +62,8 @@ class ExecutionQueue(Protocol):
         remains in the queue but immediately becomes available for another
         worker to claim.
 
+        If the claim has already been lost, this operation has no effect.
+
         Args:
             claim: Claim representing the worker's current lease.
         """
@@ -72,6 +74,8 @@ class ExecutionQueue(Protocol):
         This operation atomically verifies ownership of the claim, removes the
         completed task from the queue, and enqueues any newly runnable task
         executions.
+
+        If the claim has already been lost, this operation has no effect.
 
         Args:
             claim: Claim representing the worker's current lease.

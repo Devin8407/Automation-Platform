@@ -1,7 +1,7 @@
 from collections.abc import Callable, Generator
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from automation_platform.config import Settings
@@ -53,14 +53,26 @@ def infrastructure_factory(
 
     def factory(
         *,
-        settings: Settings = settings_factory(),
+        settings: Settings | None = None,
         engine: Engine = engine,
         session_factory: sessionmaker = session_factory,
     ) -> Infrastructure:
         return Infrastructure(
-            settings,
+            settings or settings_factory(),
             engine,
             session_factory,
         )
 
     return factory
+
+
+@pytest.fixture(autouse=True)
+def clear_database(engine):
+    with engine.begin() as conn:
+        conn.execute(text("TRUNCATE execution_queue CASCADE"))
+        # truncate other tables too if needed
+
+    yield
+
+    with engine.begin() as conn:
+        conn.execute(text("TRUNCATE execution_queue CASCADE"))
