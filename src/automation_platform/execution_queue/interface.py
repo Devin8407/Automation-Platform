@@ -16,7 +16,7 @@ class ExecutionQueue(Protocol):
     # Public API
     # ==============================================================================================
 
-    def enqueue(self, task_execution_id: UUID) -> None:
+    def enqueue(self, task_execution_ids: list[UUID]) -> None:
         """Adds a task execution to the queue
 
         Args:

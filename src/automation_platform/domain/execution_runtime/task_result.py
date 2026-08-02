@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..common.enums import TaskStatus
 from .task_output import TaskOutput
 
 
@@ -16,7 +15,7 @@ from .task_output import TaskOutput
 class TaskResult:
     """Runtime results of an executed task plugin."""
 
-    status: TaskStatus
+    succeeded: bool
 
     output: TaskOutput
 

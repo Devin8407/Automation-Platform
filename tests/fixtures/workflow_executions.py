@@ -37,7 +37,7 @@ def task_execution_factory() -> Callable[..., TaskExecution]:
         task_definition_id: UUID | None = None,
         key: str = "task",
         plugin_type: str = "test.task",
-        configuration: dict[Any] | None = None,
+        configuration: dict[str, Any] | None = None,
         status: TaskStatus = TaskStatus.PENDING,
         remaining_dependencies: int = 0,
         remaining_tries: int = 0,
@@ -54,12 +54,12 @@ def task_execution_factory() -> Callable[..., TaskExecution]:
             task_definition_id=task_definition_id or uuid4(),
             key=key,
             plugin_type=plugin_type,
-            configuration=configuration or {},
+            configuration={} if configuration is None else configuration,
             status=status,
             remaining_dependencies=remaining_dependencies,
             remaining_tries=remaining_tries,
-            parent_task_ids=parent_task_ids or [],
-            child_task_ids=child_task_ids or [],
+            parent_task_ids=[] if parent_task_ids is None else parent_task_ids,
+            child_task_ids=[] if child_task_ids is None else child_task_ids,
             output=output,
             error_message=error_message,
             started_at=started_at,
@@ -86,16 +86,18 @@ def workflow_execution_factory(
         started_at: datetime | None = None,
         completed_at: datetime | None = None,
     ) -> WorkflowExecution:
-
         execution_id = id or uuid4()
 
-        # Build default task executions from the workflow definition.
         if task_executions is None:
             if workflow_definition is not None:
                 task_executions = [
                     task_execution_factory(
                         workflow_execution_id=execution_id,
                         task_definition_id=task.id,
+                        key=task.key,
+                        plugin_type=task.plugin_type,
+                        configuration=task.configuration,
+                        remaining_tries=task.max_tries,
                     )
                     for task in workflow_definition.task_definitions
                 ]
@@ -129,9 +131,7 @@ def persisted_workflow_definition(
     session,
     workflow_definition_factory,
 ) -> WorkflowDefinition:
-    """
-    Create and persist a workflow definition.
-    """
+    """Create and persist a workflow definition."""
 
     definition = workflow_definition_factory()
 

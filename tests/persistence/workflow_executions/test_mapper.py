@@ -4,6 +4,7 @@ Tests for workflow execution mapping.
 
 from uuid import uuid4
 
+from automation_platform.domain import TaskOutput
 from automation_platform.persistence.workflow_executions._mapper import (
     WorkflowExecutionMapper,
 )
@@ -94,7 +95,9 @@ def test_workflow_to_domain(task_execution_factory) -> None:
 def test_task_to_model(task_execution_factory) -> None:
     """Task executions are mapped to SQLAlchemy models."""
 
-    task = task_execution_factory()
+    task = task_execution_factory(
+        output=TaskOutput({"value": 123}),
+    )
 
     model = WorkflowExecutionMapper.task_to_model(task)
 
@@ -111,10 +114,38 @@ def test_task_to_model(task_execution_factory) -> None:
     assert model.parent_task_ids == task.parent_task_ids
     assert model.child_task_ids == task.child_task_ids
     assert model.remaining_tries == task.remaining_tries
-    assert model.output == task.output
+
+    assert model.output == {"value": 123}
+
     assert model.error_message == task.error_message
     assert model.started_at == task.started_at
     assert model.completed_at == task.completed_at
+
+
+def test_task_to_model_maps_none_output(task_execution_factory) -> None:
+    """Missing task output remains None in persistence."""
+
+    task = task_execution_factory(output=None)
+
+    model = WorkflowExecutionMapper.task_to_model(task)
+
+    assert model.output is None
+
+
+def test_output_to_domain() -> None:
+    """Persisted task output is mapped to a domain TaskOutput."""
+
+    output = WorkflowExecutionMapper.output_to_domain(
+        {"value": 123},
+    )
+
+    assert output == TaskOutput({"value": 123})
+
+
+def test_output_to_domain_returns_none_for_none() -> None:
+    """Missing persisted task output remains None."""
+
+    assert WorkflowExecutionMapper.output_to_domain(None) is None
 
 
 def test_task_to_domain(task_execution_factory) -> None:

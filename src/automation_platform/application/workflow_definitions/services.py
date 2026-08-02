@@ -156,7 +156,7 @@ class WorkflowDefinitionService:
 
         remaining_dependencies = {task.key: len(task.dependencies) for task in tasks}
 
-        children = {task.key: [] for task in tasks}
+        children: dict[str, list[str]] = {task.key: [] for task in tasks}
 
         for task in tasks:
             for dependency in task.dependencies:

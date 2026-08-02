@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from automation_platform.domain.workflow_executions import WorkflowExecution
 
-from ...domain import TaskStatus, WorkflowStatus
+from ...domain import TaskOutput, TaskStatus, WorkflowStatus
 from ._mapper import WorkflowExecutionMapper
 from ._model import TaskExecutionModel, WorkflowExecutionModel
 from .operations import (
@@ -22,6 +22,7 @@ from .operations import (
     RetryTaskExecutionHelperResult,
     RetryTaskExecutionRequest,
     RetryTaskExecutionResult,
+    StartTaskExecutionResult,
 )
 
 
@@ -110,22 +111,28 @@ class WorkflowExecutionRepository:
             )
         )
 
-    def start_task(self, task_execution_id: UUID, started_at: datetime) -> bool:
-        """Atomically start a task execution.
+    def start_task(
+        self,
+        task_execution_id: UUID,
+        started_at: datetime,
+    ) -> StartTaskExecutionResult | None:
+        """Start or resume processing a task execution.
 
-        Transitions a pending task execution to the running state and records the
-        time execution began. If the task execution has already been transitioned by
-        another worker, no changes are made.
+        A pending task is transitioned to running and records its initial start
+        time. An already-running task remains unchanged so reclaimed or retried
+        work can continue processing. Terminal or nonexistent tasks cannot be
+        processed.
 
         Args:
-            task_execution_id: Task execution identifier.
-            started_at: Time the task execution started.
+            task_execution_id: Identifier of the task execution to process.
+            started_at: Time at which processing began if the task is pending.
 
         Returns:
-            True if the task execution was started; otherwise False.
+            Execution data required to process the task if it is pending or
+            running; otherwise None.
         """
 
-        result = self._session.execute(
+        self._session.execute(
             update(TaskExecutionModel)
             .where(
                 TaskExecutionModel.id == task_execution_id,
@@ -137,7 +144,21 @@ class WorkflowExecutionRepository:
             )
         )
 
-        return result.rowcount == 1
+        task_model = self._session.scalar(
+            select(TaskExecutionModel).where(
+                TaskExecutionModel.id == task_execution_id,
+                TaskExecutionModel.status == TaskStatus.RUNNING,
+            )
+        )
+
+        if task_model is None:
+            return None
+
+        return StartTaskExecutionResult(
+            plugin_type=task_model.plugin_type,
+            configuration=task_model.configuration,
+            parent_outputs=self._load_parent_outputs(task_model.parent_task_ids),
+        )
 
     def complete_task(self, request: CompleteTaskExecutionRequest) -> CompleteTaskExecutionResult:
         """Atomically complete a task execution.
@@ -214,6 +235,40 @@ class WorkflowExecutionRepository:
     # ==============================================================================================
     # Private Helpers
     # ==============================================================================================
+
+    def _load_parent_outputs(self, parent_task_ids: list[UUID]) -> dict[str, TaskOutput]:
+        """Load outputs produced by parent task executions.
+
+        Args:
+            parent_task_ids: Identifiers of the parent task executions.
+
+        Returns:
+            Mapping of parent task definition keys to their outputs.
+
+        Raises:
+            RuntimeError: If a parent task execution does not have an output.
+        """
+
+        if not parent_task_ids:
+            return {}
+
+        parent_models = self._session.scalars(
+            select(TaskExecutionModel).where(
+                TaskExecutionModel.id.in_(parent_task_ids),
+            )
+        )
+
+        parent_outputs = {}
+
+        for parent_model in parent_models:
+            if parent_model.output is None:
+                raise RuntimeError(f"Parent task {parent_model.key!r} does not have an output.")
+
+            parent_outputs[parent_model.key] = WorkflowExecutionMapper.output_to_domain(
+                parent_model.output
+            )
+
+        return parent_outputs
 
     def _complete_task(
         self, request: CompleteTaskExecutionRequest
@@ -338,10 +393,10 @@ class WorkflowExecutionRepository:
     def _retry_task(self, request: RetryTaskExecutionRequest) -> RetryTaskExecutionHelperResult:
         """Atomically retry a task execution.
 
-        Decrements the remaining retry count of a running task execution. If retries
-        remain, the task execution is returned to the queued state. Otherwise, the
-        task execution is marked as failed. If the task has already been transitioned
-        by another worker, no changes are made.
+        Atomically consumes one remaining attempt. If another attempt remains after
+        decrementing, the task stays running; otherwise, it is marked failed.
+
+        If the task has already been transitioned by another worker, no changes are made.
 
         Args:
             request: Task retry request.
@@ -364,7 +419,7 @@ class WorkflowExecutionRepository:
                     case(
                         (
                             TaskExecutionModel.remaining_tries > 1,
-                            TaskStatus.PENDING,
+                            TaskStatus.RUNNING,
                         ),
                         else_=TaskStatus.FAILED,
                     ),
@@ -398,11 +453,19 @@ class WorkflowExecutionRepository:
             workflow_execution_id=row.workflow_execution_id,
         )
 
-    def _fail_workflow(self, workflow_execution_id: UUID, completed_at: datetime) -> bool:
-        """Atomically fail a workflow execution.
+    def _fail_workflow(
+        self,
+        workflow_execution_id: UUID,
+        completed_at: datetime,
+    ) -> bool:
+        """Atomically fail a workflow execution and cancel its remaining tasks.
 
-        Transitions a running workflow execution to the failed state. If the workflow
+        Transitions a running workflow execution to the failed state and cancels
+        all pending or running task executions belonging to it. If the workflow
         execution has already been transitioned, no changes are made.
+
+        The task responsible for the workflow failure is expected to have already
+        been transitioned to the failed state and is therefore unaffected.
 
         Args:
             workflow_execution_id: Workflow execution identifier.
@@ -424,4 +487,24 @@ class WorkflowExecutionRepository:
             )
         )
 
-        return result.rowcount == 1
+        if result.rowcount != 1:
+            return False
+
+        self._session.execute(
+            update(TaskExecutionModel)
+            .where(
+                TaskExecutionModel.workflow_execution_id == workflow_execution_id,
+                TaskExecutionModel.status.in_(
+                    (
+                        TaskStatus.PENDING,
+                        TaskStatus.RUNNING,
+                    )
+                ),
+            )
+            .values(
+                status=TaskStatus.CANCELLED,
+                completed_at=completed_at,
+            )
+        )
+
+        return True

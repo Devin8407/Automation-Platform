@@ -1,10 +1,11 @@
 from .bootstrap import build_unit_of_work_factory
 from .database import UnitOfWork
-from .workflow_executions.operations import (
+from .workflow_executions import (
     CompleteTaskExecutionRequest,
     CompleteTaskExecutionResult,
     RetryTaskExecutionRequest,
     RetryTaskExecutionResult,
+    StartTaskExecutionResult,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "CompleteTaskExecutionResult",
     "RetryTaskExecutionRequest",
     "RetryTaskExecutionResult",
+    "StartTaskExecutionResult",
 ]

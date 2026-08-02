@@ -34,7 +34,7 @@ class PostgresExecutionQueue(ExecutionQueue):
     # Public API
     # ==============================================================================================
 
-    def enqueue(self, task_execution_id: Iterable[UUID]) -> None:
+    def enqueue(self, task_execution_ids: Iterable[UUID]) -> None:
         """Ensure a runnable task execution is present in the queue.
 
         If the task execution is already queued, the operation has no effect.
@@ -46,7 +46,7 @@ class PostgresExecutionQueue(ExecutionQueue):
         with self._session_factory() as session:
             self._insert_queue_entries(
                 session,
-                task_execution_id,
+                task_execution_ids,
                 datetime.now(timezone.utc),
             )
 

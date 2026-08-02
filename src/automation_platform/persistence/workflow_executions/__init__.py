@@ -3,6 +3,7 @@ from .operations import (
     CompleteTaskExecutionResult,
     RetryTaskExecutionRequest,
     RetryTaskExecutionResult,
+    StartTaskExecutionResult,
 )
 from .repository import WorkflowExecutionRepository
 
@@ -12,4 +13,5 @@ __all__ = [
     "RetryTaskExecutionRequest",
     "RetryTaskExecutionResult",
     "WorkflowExecutionRepository",
+    "StartTaskExecutionResult",
 ]

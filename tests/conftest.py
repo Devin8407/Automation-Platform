@@ -7,4 +7,5 @@ pytest_plugins = (
     "tests.fixtures.execution_queue",
     "tests.fixtures.application.application",
     "tests.fixtures.application.workflow_definitions",
+    "tests.fixtures.application.task_processing",
 )

@@ -169,7 +169,9 @@ class WorkflowStartService:
             identifiers.
         """
 
-        children = {task_definition.id: [] for task_definition in task_definitions}
+        children: dict[UUID, list[UUID]] = {
+            task_definition.id: [] for task_definition in task_definitions
+        }
 
         for task_definition in task_definitions:
             task_execution_id = task_execution_ids[task_definition.id]

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from ...domain import TaskOutput
@@ -27,6 +28,15 @@ class RetryTaskExecutionRequest:
     task_execution_id: UUID
     error_message: str | None
     completed_at: datetime
+
+
+@dataclass(frozen=True)
+class StartTaskExecutionResult:
+    """Execution data required to process a task."""
+
+    plugin_type: str
+    configuration: dict[str, Any]
+    parent_outputs: dict[str, TaskOutput]
 
 
 @dataclass(frozen=True)

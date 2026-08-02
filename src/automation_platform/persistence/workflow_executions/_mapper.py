@@ -125,8 +125,21 @@ class WorkflowExecutionMapper:
             parent_task_ids=model.parent_task_ids,
             child_task_ids=model.child_task_ids,
             remaining_tries=model.remaining_tries,
-            output=(None if model.output is None else TaskOutput(values=model.output)),
+            output=WorkflowExecutionMapper.output_to_domain(model.output),
             error_message=model.error_message,
             started_at=model.started_at,
             completed_at=model.completed_at,
         )
+
+    @staticmethod
+    def output_to_domain(output):
+        """Convert a task output into a domain object.
+
+        Args:
+            output: SQLAlchemy task output JSONB.
+
+        Returns:
+            Domain task output.
+        """
+
+        return None if output is None else TaskOutput(values=output)

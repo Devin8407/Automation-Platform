@@ -5,6 +5,7 @@ Tests for the workflow execution repository.
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
 from sqlalchemy.orm import Session
 
 from automation_platform.domain.common.enums import (
@@ -207,9 +208,14 @@ def test_start_task_starts_pending_task(
     task = execution.task_executions[0]
     started_at = datetime.now(UTC)
 
-    assert repository.start_task(task.id, started_at)
+    result = repository.start_task(task.id, started_at)
 
     session.commit()
+
+    assert result is not None
+    assert result.plugin_type == task.plugin_type
+    assert result.configuration == task.configuration
+    assert result.parent_outputs == {}
 
     loaded = repository.load(execution.id)
     loaded_task = loaded.task_executions[0]
@@ -218,12 +224,12 @@ def test_start_task_starts_pending_task(
     assert loaded_task.started_at == started_at
 
 
-def test_start_task_returns_false_when_task_is_not_pending(
+def test_start_task_returns_running_task(
     session: Session,
     persisted_workflow_definition,
     workflow_execution_factory,
 ) -> None:
-    """Only pending task executions may be started."""
+    """Running task executions can be reclaimed."""
 
     execution = workflow_execution_factory(
         workflow_definition=persisted_workflow_definition,
@@ -231,24 +237,237 @@ def test_start_task_returns_false_when_task_is_not_pending(
 
     task = execution.task_executions[0]
     task.status = TaskStatus.RUNNING
+    task.started_at = datetime.now(UTC)
 
     repository = WorkflowExecutionRepository(session)
 
     repository.create(execution)
     session.commit()
 
-    started_at = datetime.now(UTC)
+    original_started_at = task.started_at
 
-    assert not repository.start_task(task.id, started_at)
+    result = repository.start_task(
+        task.id,
+        datetime.now(UTC),
+    )
 
     session.commit()
 
-    loaded = repository.load(execution.id)
+    assert result is not None
+    assert result.plugin_type == task.plugin_type
+    assert result.configuration == task.configuration
+    assert result.parent_outputs == {}
 
+    loaded = repository.load(execution.id)
     loaded_task = loaded.task_executions[0]
 
     assert loaded_task.status == TaskStatus.RUNNING
-    assert loaded_task.started_at is None
+    assert loaded_task.started_at == original_started_at
+
+
+def test_start_task_returns_none_when_task_is_terminal(
+    session: Session,
+    persisted_workflow_definition,
+    workflow_execution_factory,
+) -> None:
+    """Terminal task executions cannot be started."""
+
+    execution = workflow_execution_factory(
+        workflow_definition=persisted_workflow_definition,
+    )
+
+    task = execution.task_executions[0]
+    task.status = TaskStatus.COMPLETED
+
+    repository = WorkflowExecutionRepository(session)
+
+    repository.create(execution)
+    session.commit()
+
+    result = repository.start_task(
+        task.id,
+        datetime.now(UTC),
+    )
+
+    session.commit()
+
+    assert result is None
+
+    loaded = repository.load(execution.id)
+    loaded_task = loaded.task_executions[0]
+
+    assert loaded_task.status == TaskStatus.COMPLETED
+
+
+def test_start_task_returns_none_when_task_does_not_exist(
+    session: Session,
+) -> None:
+    """Unknown task executions cannot be started."""
+
+    repository = WorkflowExecutionRepository(session)
+
+    result = repository.start_task(
+        uuid4(),
+        datetime.now(UTC),
+    )
+
+    assert result is None
+
+
+def test_start_task_returns_parent_outputs(
+    session: Session,
+    workflow_definition_factory,
+    task_definition_factory,
+    workflow_execution_factory,
+) -> None:
+    """Parent task outputs are returned when starting a child task."""
+
+    parent_definition = task_definition_factory(key="parent")
+    child_definition = task_definition_factory(key="child")
+
+    definition = workflow_definition_factory(
+        task_definitions=[
+            parent_definition,
+            child_definition,
+        ],
+    )
+
+    WorkflowDefinitionRepository(session).save(definition)
+    session.commit()
+
+    execution = workflow_execution_factory(
+        workflow_definition=definition,
+    )
+
+    parent = execution.task_executions[0]
+    child = execution.task_executions[1]
+
+    parent.status = TaskStatus.COMPLETED
+    parent.output = TaskOutput({"value": 123})
+
+    child.parent_task_ids = [parent.id]
+
+    repository = WorkflowExecutionRepository(session)
+
+    repository.create(execution)
+    session.commit()
+
+    result = repository.start_task(
+        child.id,
+        datetime.now(UTC),
+    )
+
+    assert result is not None
+    assert result.parent_outputs == {
+        parent.key: TaskOutput({"value": 123}),
+    }
+
+
+def test_start_task_raises_when_parent_has_no_output(
+    session: Session,
+    workflow_definition_factory,
+    task_definition_factory,
+    workflow_execution_factory,
+) -> None:
+    """Starting a child fails when a parent has no output."""
+
+    parent_definition = task_definition_factory(key="parent")
+    child_definition = task_definition_factory(key="child")
+
+    definition = workflow_definition_factory(
+        task_definitions=[
+            parent_definition,
+            child_definition,
+        ],
+    )
+
+    WorkflowDefinitionRepository(session).save(definition)
+    session.commit()
+
+    execution = workflow_execution_factory(
+        workflow_definition=definition,
+    )
+
+    parent = execution.task_executions[0]
+    child = execution.task_executions[1]
+
+    parent.status = TaskStatus.COMPLETED
+    parent.output = None
+
+    child.parent_task_ids = [parent.id]
+
+    repository = WorkflowExecutionRepository(session)
+
+    repository.create(execution)
+    session.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match="does not have an output",
+    ):
+        repository.start_task(
+            child.id,
+            datetime.now(UTC),
+        )
+
+
+def test_start_task_returns_multiple_parent_outputs(
+    session: Session,
+    workflow_definition_factory,
+    task_definition_factory,
+    workflow_execution_factory,
+) -> None:
+    """Outputs from all parent tasks are returned when starting a child task."""
+
+    parent1_definition = task_definition_factory(key="parent1")
+    parent2_definition = task_definition_factory(key="parent2")
+    child_definition = task_definition_factory(key="child")
+
+    definition = workflow_definition_factory(
+        task_definitions=[
+            parent1_definition,
+            parent2_definition,
+            child_definition,
+        ],
+    )
+
+    WorkflowDefinitionRepository(session).save(definition)
+    session.commit()
+
+    execution = workflow_execution_factory(
+        workflow_definition=definition,
+    )
+
+    parent1 = execution.task_executions[0]
+    parent2 = execution.task_executions[1]
+    child = execution.task_executions[2]
+
+    parent1.status = TaskStatus.COMPLETED
+    parent1.output = TaskOutput({"value": 1})
+
+    parent2.status = TaskStatus.COMPLETED
+    parent2.output = TaskOutput({"value": 2})
+
+    child.parent_task_ids = [
+        parent1.id,
+        parent2.id,
+    ]
+
+    repository = WorkflowExecutionRepository(session)
+
+    repository.create(execution)
+    session.commit()
+
+    result = repository.start_task(
+        child.id,
+        datetime.now(UTC),
+    )
+
+    assert result is not None
+    assert result.parent_outputs == {
+        parent1.key: TaskOutput({"value": 1}),
+        parent2.key: TaskOutput({"value": 2}),
+    }
 
 
 # ==============================================================================
@@ -298,7 +517,7 @@ def test_complete_task_marks_task_completed(
     assert result.workflow_completed
 
 
-def test_complete_task_returns_false_when_task_not_running(
+def test_complete_task_does_nothing_when_task_not_running(
     session: Session,
     persisted_workflow_definition,
     workflow_execution_factory,
@@ -534,17 +753,36 @@ def test_complete_task_does_not_complete_workflow_when_tasks_remain(
     assert not result.workflow_completed
 
 
+def test_complete_task_does_nothing_when_task_does_not_exist(
+    session: Session,
+) -> None:
+    """Completing an unknown task has no effect."""
+
+    repository = WorkflowExecutionRepository(session)
+
+    result = repository.complete_task(
+        CompleteTaskExecutionRequest(
+            task_execution_id=uuid4(),
+            output=TaskOutput(),
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+    assert result.runnable_task_execution_ids == []
+    assert not result.workflow_completed
+
+
 # ==============================================================================
 # retry_task()
 # ==============================================================================
 
 
-def test_retry_task_decrements_remaining_tries(
+def test_retry_task_keeps_task_running_when_retries_remain(
     session: Session,
     persisted_workflow_definition,
     workflow_execution_factory,
 ) -> None:
-    """Retrying a task with remaining retries returns it to the pending state."""
+    """Retrying a task keeps it running when retries remain."""
 
     execution = workflow_execution_factory(
         workflow_definition=persisted_workflow_definition,
@@ -573,7 +811,7 @@ def test_retry_task_decrements_remaining_tries(
     loaded = repository.load(execution.id)
     loaded_task = loaded.task_executions[0]
 
-    assert loaded_task.status == TaskStatus.PENDING
+    assert loaded_task.status == TaskStatus.RUNNING
     assert loaded_task.remaining_tries == 2
     assert loaded_task.error_message == "Temporary failure"
     assert loaded_task.completed_at is None
@@ -668,7 +906,99 @@ def test_retry_task_fails_workflow_when_retries_exhausted(
     assert result.workflow_failed
 
 
-def test_retry_task_returns_false_when_task_not_running(
+def test_retry_task_cancels_remaining_tasks_when_workflow_fails(
+    session: Session,
+    workflow_definition_factory,
+    task_definition_factory,
+    workflow_execution_factory,
+) -> None:
+    """Failing a workflow cancels its remaining unfinished tasks."""
+
+    failing_definition = task_definition_factory(key="failing")
+    pending_definition = task_definition_factory(key="pending")
+    running_definition = task_definition_factory(key="running")
+    completed_definition = task_definition_factory(key="completed")
+
+    definition = workflow_definition_factory(
+        task_definitions=[
+            failing_definition,
+            pending_definition,
+            running_definition,
+            completed_definition,
+        ],
+    )
+
+    WorkflowDefinitionRepository(session).save(definition)
+    session.commit()
+
+    execution = workflow_execution_factory(
+        workflow_definition=definition,
+        status=WorkflowStatus.RUNNING,
+    )
+
+    failing_task = execution.task_executions[0]
+    pending_task = execution.task_executions[1]
+    running_task = execution.task_executions[2]
+    completed_task = execution.task_executions[3]
+
+    failing_task.status = TaskStatus.RUNNING
+    failing_task.remaining_tries = 1
+
+    pending_task.status = TaskStatus.PENDING
+    running_task.status = TaskStatus.RUNNING
+
+    completed_at_before_failure = datetime.now(UTC)
+    completed_task.status = TaskStatus.COMPLETED
+    completed_task.completed_at = completed_at_before_failure
+
+    repository = WorkflowExecutionRepository(session)
+
+    repository.create(execution)
+    session.commit()
+
+    completed_at = datetime.now(UTC)
+
+    result = repository.retry_task(
+        RetryTaskExecutionRequest(
+            task_execution_id=failing_task.id,
+            error_message="Permanent failure",
+            completed_at=completed_at,
+        )
+    )
+
+    session.commit()
+
+    loaded = repository.load(execution.id)
+
+    loaded_tasks = {task.id: task for task in loaded.task_executions}
+
+    loaded_failing_task = loaded_tasks[failing_task.id]
+    loaded_pending_task = loaded_tasks[pending_task.id]
+    loaded_running_task = loaded_tasks[running_task.id]
+    loaded_completed_task = loaded_tasks[completed_task.id]
+
+    assert loaded_failing_task.status == TaskStatus.FAILED
+    assert loaded_failing_task.remaining_tries == 0
+    assert loaded_failing_task.error_message == "Permanent failure"
+    assert loaded_failing_task.completed_at == completed_at
+
+    assert loaded_pending_task.status == TaskStatus.CANCELLED
+    assert loaded_pending_task.completed_at == completed_at
+
+    assert loaded_running_task.status == TaskStatus.CANCELLED
+    assert loaded_running_task.completed_at == completed_at
+
+    assert loaded_completed_task.status == TaskStatus.COMPLETED
+    assert loaded_completed_task.completed_at == completed_at_before_failure
+
+    assert loaded.status == WorkflowStatus.FAILED
+    assert loaded.completed_at == completed_at
+
+    assert not result.should_retry
+    assert result.workflow_failed
+
+
+def test_retry_task_does_nothing_when_task_not_running(
     session: Session,
     persisted_workflow_definition,
     workflow_execution_factory,
@@ -702,6 +1032,64 @@ def test_retry_task_returns_false_when_task_not_running(
     loaded = repository.load(execution.id)
 
     assert loaded == execution
+
+    assert not result.should_retry
+    assert not result.workflow_failed
+
+
+def test_retry_task_does_nothing_when_no_retries_remain(
+    session: Session,
+    persisted_workflow_definition,
+    workflow_execution_factory,
+) -> None:
+    """Retrying a task with no remaining retries has no effect."""
+
+    execution = workflow_execution_factory(
+        workflow_definition=persisted_workflow_definition,
+        status=WorkflowStatus.RUNNING,
+    )
+
+    task = execution.task_executions[0]
+    task.status = TaskStatus.RUNNING
+    task.remaining_tries = 0
+
+    repository = WorkflowExecutionRepository(session)
+
+    repository.create(execution)
+    session.commit()
+
+    result = repository.retry_task(
+        RetryTaskExecutionRequest(
+            task_execution_id=task.id,
+            error_message="Ignored",
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+    session.commit()
+
+    loaded = repository.load(execution.id)
+
+    assert loaded == execution
+
+    assert not result.should_retry
+    assert not result.workflow_failed
+
+
+def test_retry_task_does_nothing_when_task_does_not_exist(
+    session: Session,
+) -> None:
+    """Retrying an unknown task has no effect."""
+
+    repository = WorkflowExecutionRepository(session)
+
+    result = repository.retry_task(
+        RetryTaskExecutionRequest(
+            task_execution_id=uuid4(),
+            error_message="Ignored",
+            completed_at=datetime.now(UTC),
+        )
+    )
 
     assert not result.should_retry
     assert not result.workflow_failed
