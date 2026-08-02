@@ -85,7 +85,7 @@ class WorkflowDefinitionMapper:
             key=task.key,
             plugin_type=task.plugin_type,
             configuration=task.configuration,
-            max_retries=task.max_retries,
+            max_tries=task.max_tries,
         )
 
     @staticmethod
@@ -105,7 +105,7 @@ class WorkflowDefinitionMapper:
             plugin_type=model.plugin_type,
             configuration=model.configuration,
             dependencies=dependency_ids,
-            max_retries=model.max_retries,
+            max_tries=model.max_tries,
         )
 
     @staticmethod

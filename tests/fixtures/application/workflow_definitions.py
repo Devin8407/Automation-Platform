@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -18,14 +17,14 @@ def create_task_definition_factory() -> Callable[..., CreateTaskDefinition]:
         key: str = "task_a",
         configuration=None,
         dependencies=None,
-        max_retries: int = 0,
+        max_tries: int = 1,
     ) -> CreateTaskDefinition:
         return CreateTaskDefinition(
             plugin_type=plugin_type,
             key=key,
             configuration=configuration if configuration is not None else {},
             dependencies=dependencies if dependencies is not None else [],
-            max_retries=max_retries,
+            max_tries=max_tries,
         )
 
     return factory
@@ -69,28 +68,4 @@ def create_workflow_definition_factory(
             enabled=enabled,
         )
 
-    return factory
-
-
-@pytest.fixture
-def mock_task_registry():
-    return MagicMock()
-
-
-@pytest.fixture
-def mock_trigger_registry():
-    return MagicMock()
-
-
-@pytest.fixture
-def mock_uow():
-    uow = MagicMock()
-    uow.__enter__.return_value = uow
-    uow.__exit__.return_value = None
-    return uow
-
-
-@pytest.fixture
-def mock_uow_factory(mock_uow):
-    factory = MagicMock(return_value=mock_uow)
     return factory

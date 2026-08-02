@@ -19,7 +19,7 @@ def test_enqueue_inserts_queue_entry(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     with session_factory() as session:
         queue_entry = session.execute(
@@ -47,7 +47,7 @@ def test_enqueue_sets_current_timestamp(
 
     before = datetime.now(timezone.utc)
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     after = datetime.now(timezone.utc)
 
@@ -70,8 +70,8 @@ def test_enqueue_is_idempotent(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
+    postgres_queue.enqueue([task_execution.id])
 
     with session_factory() as session:
         entries = session.execute(
@@ -93,8 +93,8 @@ def test_enqueue_multiple_tasks(
     first_task = task_execution_factory()
     second_task = task_execution_factory()
 
-    postgres_queue.enqueue(first_task.id)
-    postgres_queue.enqueue(second_task.id)
+    postgres_queue.enqueue([first_task.id])
+    postgres_queue.enqueue([second_task.id])
 
     with session_factory() as session:
         entries = session.execute(select(QueueEntryModel)).scalars()
@@ -117,7 +117,7 @@ def test_enqueue_preserves_existing_queue_entries(
     first_task = task_execution_factory()
     second_task = task_execution_factory()
 
-    postgres_queue.enqueue(first_task.id)
+    postgres_queue.enqueue([first_task.id])
 
     with session_factory() as session:
         original = session.execute(
@@ -128,7 +128,7 @@ def test_enqueue_preserves_existing_queue_entries(
 
         original_time = original.queued_at
 
-    postgres_queue.enqueue(second_task.id)
+    postgres_queue.enqueue([second_task.id])
 
     with session_factory() as session:
         original = session.execute(
@@ -149,7 +149,7 @@ def test_enqueue_does_not_modify_existing_entry(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     with session_factory() as session:
         original = session.execute(
@@ -160,7 +160,7 @@ def test_enqueue_does_not_modify_existing_entry(
 
         original_time = original.queued_at
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     with session_factory() as session:
         entry = session.execute(
@@ -184,12 +184,12 @@ def test_enqueue_orders_tasks_by_enqueue_time(
     first_task = task_execution_factory()
     second_task = task_execution_factory()
 
-    postgres_queue.enqueue(first_task.id)
+    postgres_queue.enqueue([first_task.id])
 
     # Ensure timestamps differ.
     time.sleep(0.01)
 
-    postgres_queue.enqueue(second_task.id)
+    postgres_queue.enqueue([second_task.id])
 
     with session_factory() as session:
         entries = (
@@ -211,7 +211,7 @@ def test_enqueue_sets_timestamp_close_to_now(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     with session_factory() as session:
         entry = session.execute(
@@ -235,8 +235,8 @@ def test_enqueue_is_idempotent_across_queue_instances(
     queue1 = queue_factory(queue_type="postgres")
     queue2 = queue_factory(queue_type="postgres")
 
-    queue1.enqueue(task_execution.id)
-    queue2.enqueue(task_execution.id)
+    queue1.enqueue([task_execution.id])
+    queue2.enqueue([task_execution.id])
 
     with session_factory() as session:
         entries = session.execute(

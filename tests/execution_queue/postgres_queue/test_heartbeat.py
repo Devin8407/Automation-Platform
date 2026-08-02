@@ -24,7 +24,7 @@ def test_heartbeat_renews_active_lease(
     task_execution = task_execution_factory()
     worker_id = uuid4()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(worker_id)
 
@@ -42,7 +42,7 @@ def test_heartbeat_updates_last_heartbeat_timestamp(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -73,7 +73,7 @@ def test_heartbeat_does_not_modify_claimed_at(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -106,7 +106,7 @@ def test_heartbeat_returns_false_for_invalid_claim_token(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -141,7 +141,7 @@ def test_heartbeat_returns_false_after_release(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -160,7 +160,7 @@ def test_heartbeat_returns_false_after_finish(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 

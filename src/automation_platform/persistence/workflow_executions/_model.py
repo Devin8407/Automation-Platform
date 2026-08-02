@@ -70,6 +70,10 @@ class TaskExecutionModel(Base):
         index=True,
     )
 
+    key: Mapped[str] = mapped_column(String, nullable=False)
+    plugin_type: Mapped[str] = mapped_column(String, nullable=False)
+    configuration: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), nullable=False)
 
     remaining_dependencies: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -6,7 +6,6 @@ from enum import Enum, auto
 class WorkflowStatus(Enum):
     """Current state of a workflow execution."""
 
-    PENDING = auto()
     RUNNING = auto()
     COMPLETED = auto()
     FAILED = auto()

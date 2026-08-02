@@ -19,7 +19,7 @@ def test_release_clears_lease_metadata(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -49,7 +49,7 @@ def test_release_preserves_queued_timestamp(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -82,7 +82,7 @@ def test_release_makes_task_immediately_claimable(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     first_claim = postgres_queue.claim(uuid4())
 
@@ -106,7 +106,7 @@ def test_release_with_invalid_claim_token_has_no_effect(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -154,7 +154,7 @@ def test_release_is_idempotent(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -184,7 +184,7 @@ def test_release_allows_multiple_reclaims(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     first_claim = postgres_queue.claim(uuid4())
     assert first_claim is not None
@@ -211,7 +211,7 @@ def test_release_does_not_change_task_identity(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -238,8 +238,8 @@ def test_release_preserves_fifo_order(
     first_task = task_execution_factory()
     second_task = task_execution_factory()
 
-    postgres_queue.enqueue(first_task.id)
-    postgres_queue.enqueue(second_task.id)
+    postgres_queue.enqueue([first_task.id])
+    postgres_queue.enqueue([second_task.id])
 
     first_claim = postgres_queue.claim(uuid4())
 

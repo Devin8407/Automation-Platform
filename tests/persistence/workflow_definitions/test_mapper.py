@@ -73,7 +73,7 @@ def test_task_to_model() -> None:
         plugin_type="python",
         configuration={"value": 1},
         dependencies=[uuid4(), uuid4()],
-        max_retries=3,
+        max_tries=3,
     )
 
     model = WorkflowDefinitionMapper.task_to_model(
@@ -87,7 +87,7 @@ def test_task_to_model() -> None:
     assert model.key == task.key
     assert model.plugin_type == task.plugin_type
     assert model.configuration == task.configuration
-    assert model.max_retries == task.max_retries
+    assert model.max_tries == task.max_tries
 
 
 def test_task_to_domain() -> None:
@@ -99,7 +99,7 @@ def test_task_to_domain() -> None:
         key="task",
         plugin_type="python",
         configuration={"value": 1},
-        max_retries=5,
+        max_tries=5,
     )
 
     task = WorkflowDefinitionMapper.task_to_domain(
@@ -112,7 +112,7 @@ def test_task_to_domain() -> None:
     assert task.plugin_type == model.plugin_type
     assert task.configuration == model.configuration
     assert task.dependencies == dependency_ids
-    assert task.max_retries == model.max_retries
+    assert task.max_tries == model.max_tries
 
 
 def test_trigger_to_model() -> None:
@@ -178,7 +178,7 @@ def test_dependencies_to_models() -> None:
         plugin_type="python",
         configuration={},
         dependencies=dependency_ids,
-        max_retries=1,
+        max_tries=1,
     )
 
     models = WorkflowDefinitionMapper.dependencies_to_models(task)

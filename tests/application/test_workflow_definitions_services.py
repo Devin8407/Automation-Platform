@@ -5,7 +5,7 @@ from uuid import UUID
 
 import pytest
 
-from automation_platform.application.workflow_definitions import (
+from automation_platform.application import (
     InvalidWorkflowDefinitionError,
     WorkflowDefinitionService,
 )
@@ -102,7 +102,7 @@ def test_create_constructs_task_definitions(
                 plugin_type="test_task",
                 key="task_a",
                 configuration={"value": 1},
-                max_retries=3,
+                max_tries=3,
             )
         ]
     )
@@ -116,7 +116,7 @@ def test_create_constructs_task_definitions(
     assert task.key == "task_a"
     assert task.configuration == {"value": 1}
     assert task.dependencies == []
-    assert task.max_retries == 3
+    assert task.max_tries == 3
 
 
 def test_create_resolves_dependency_keys_to_ids(
@@ -183,6 +183,19 @@ def test_create_constructs_trigger_definitions(
     assert trigger.plugin_type == "test_trigger"
     assert trigger.configuration == {"value": 1}
     assert trigger.enabled is False
+
+
+def test_create_rejects_no_tasks(
+    service,
+    create_task_definition_factory,
+    create_workflow_definition_factory,
+):
+    """Creating a workflow should reject if no tasks."""
+
+    request = create_workflow_definition_factory(tasks=[])
+
+    with pytest.raises(InvalidWorkflowDefinitionError):
+        service.create(request)
 
 
 def test_create_rejects_unknown_task_plugin(
@@ -302,6 +315,26 @@ def test_create_rejects_unknown_dependency(
         service.create(request)
 
 
+def test_create_rejects_no_max_tries(
+    service,
+    create_task_definition_factory,
+    create_workflow_definition_factory,
+):
+    """Creating a workflow should reject max_tries < 1."""
+
+    request = create_workflow_definition_factory(
+        tasks=[
+            create_task_definition_factory(
+                key="task_a",
+                max_tries=0,
+            )
+        ]
+    )
+
+    with pytest.raises(InvalidWorkflowDefinitionError):
+        service.create(request)
+
+
 def test_create_rejects_dependency_cycle(
     service,
     create_task_definition_factory,
@@ -360,25 +393,6 @@ def test_create_accepts_nontrivial_acyclic_graph(
     service.create(request)
 
     mock_uow.workflow_definitions.save.assert_called_once()
-    mock_uow.commit.assert_called_once_with()
-
-
-# ==================================================================================================
-# Delete
-# ==================================================================================================
-
-
-def test_delete_deletes_workflow_definition(
-    service,
-    mock_uow,
-):
-    """Deleting a workflow should delete the requested definition and commit."""
-
-    workflow_definition_id = UUID("12345678-1234-5678-1234-567812345678")
-
-    service.delete(workflow_definition_id)
-
-    mock_uow.workflow_definitions.delete.assert_called_once_with(workflow_definition_id)
     mock_uow.commit.assert_called_once_with()
 
 
@@ -456,3 +470,22 @@ def test_create_rejects_invalid_trigger_configuration(
         match="Invalid configuration for trigger",
     ):
         service.create(request)
+
+
+# ==================================================================================================
+# Delete
+# ==================================================================================================
+
+
+def test_delete_deletes_workflow_definition(
+    service,
+    mock_uow,
+):
+    """Deleting a workflow should delete the requested definition and commit."""
+
+    workflow_definition_id = UUID("12345678-1234-5678-1234-567812345678")
+
+    service.delete(workflow_definition_id)
+
+    mock_uow.workflow_definitions.delete.assert_called_once_with(workflow_definition_id)
+    mock_uow.commit.assert_called_once_with()

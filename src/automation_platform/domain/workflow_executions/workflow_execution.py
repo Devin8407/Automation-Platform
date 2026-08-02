@@ -24,7 +24,7 @@ class WorkflowExecution:
 
     workflow_definition_id: UUID
 
-    status: WorkflowStatus = WorkflowStatus.PENDING
+    status: WorkflowStatus = WorkflowStatus.RUNNING
 
     task_executions: list[TaskExecution] = field(default_factory=list)
 

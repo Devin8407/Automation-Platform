@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from ..common.enums import TaskStatus
@@ -24,10 +25,12 @@ class TaskExecution:
     workflow_execution_id: UUID
     task_definition_id: UUID
 
+    key: str
+    plugin_type: str
+    configuration: dict[str, Any] = field(default_factory=dict)
+
     status: TaskStatus = TaskStatus.PENDING
-
     remaining_dependencies: int = 0
-
     remaining_tries: int = 0
 
     parent_task_ids: list[UUID] = field(default_factory=list)

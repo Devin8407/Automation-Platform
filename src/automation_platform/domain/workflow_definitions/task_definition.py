@@ -26,4 +26,4 @@ class TaskDefinition:
 
     dependencies: list[UUID] = field(default_factory=list)
 
-    max_retries: int = 0
+    max_tries: int = 1

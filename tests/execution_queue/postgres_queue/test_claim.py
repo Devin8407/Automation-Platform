@@ -66,7 +66,7 @@ def test_claim_marks_task_as_claimed(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     worker_id = uuid4()
 
@@ -93,7 +93,7 @@ def test_claim_removes_task_from_future_claims(
 ):
     """Claimed tasks cannot immediately be claimed again."""
 
-    postgres_queue.enqueue(task_execution_factory().id)
+    postgres_queue.enqueue([task_execution_factory().id])
 
     first_claim = postgres_queue.claim(uuid4())
 
@@ -113,8 +113,8 @@ def test_claim_claims_second_task_when_first_is_claimed(
 
     second_task = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
-    postgres_queue.enqueue(second_task.id)
+    postgres_queue.enqueue([task_execution.id])
+    postgres_queue.enqueue([second_task.id])
 
     first = postgres_queue.claim(uuid4())
     second = postgres_queue.claim(uuid4())
@@ -193,7 +193,7 @@ def test_claim_generates_new_claim_token(
 ):
     """Each successful claim receives a unique lease token."""
 
-    postgres_queue.enqueue(task_execution_factory().id)
+    postgres_queue.enqueue([task_execution_factory().id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -212,7 +212,7 @@ def test_claim_updates_heartbeat_timestamp(
 
     before = datetime.now(timezone.utc)
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -241,7 +241,7 @@ def test_claim_updates_claim_timestamp(
 
     before = datetime.now(timezone.utc)
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -267,7 +267,7 @@ def test_concurrent_workers_only_one_claims_single_task(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     def claim():
         return postgres_queue.claim(uuid4())
@@ -290,8 +290,8 @@ def test_concurrent_workers_claim_different_tasks(
     first_task = task_execution_factory()
     second_task = task_execution_factory()
 
-    postgres_queue.enqueue(first_task.id)
-    postgres_queue.enqueue(second_task.id)
+    postgres_queue.enqueue([first_task.id])
+    postgres_queue.enqueue([second_task.id])
 
     def claim():
         return postgres_queue.claim(uuid4())
@@ -318,8 +318,8 @@ def test_claim_skips_already_claimed_tasks(
     first_task = task_execution_factory()
     second_task = task_execution_factory()
 
-    postgres_queue.enqueue(first_task.id)
-    postgres_queue.enqueue(second_task.id)
+    postgres_queue.enqueue([first_task.id])
+    postgres_queue.enqueue([second_task.id])
 
     first_claim = postgres_queue.claim(uuid4())
 
@@ -341,8 +341,8 @@ def test_claim_skips_already_claimed_task(
     first_task = task_execution_factory()
     second_task = task_execution_factory()
 
-    postgres_queue.enqueue(first_task.id)
-    postgres_queue.enqueue(second_task.id)
+    postgres_queue.enqueue([first_task.id])
+    postgres_queue.enqueue([second_task.id])
 
     first_claim = postgres_queue.claim(uuid4())
 
@@ -367,8 +367,8 @@ def test_multiple_queue_instances_claim_distinct_tasks(
     queue1 = queue_factory(queue_type="postgres")
     queue2 = queue_factory(queue_type="postgres")
 
-    queue1.enqueue(first_task.id)
-    queue1.enqueue(second_task.id)
+    queue1.enqueue([first_task.id])
+    queue1.enqueue([second_task.id])
 
     first_claim = queue1.claim(uuid4())
     second_claim = queue2.claim(uuid4())
@@ -401,7 +401,7 @@ def test_multiple_workers_claim_all_tasks_once(
     queue = queue_factory(queue_type="postgres")
 
     for task in tasks:
-        queue.enqueue(task.id)
+        queue.enqueue([task.id])
 
     claimed = set()
 

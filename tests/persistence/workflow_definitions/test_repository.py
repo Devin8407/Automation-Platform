@@ -358,7 +358,7 @@ def test_update_task_definition(
     task = task_definition_factory(
         key="extract",
         plugin_type="plugin.old",
-        max_retries=3,
+        max_tries=3,
     )
 
     workflow = workflow_definition_factory(
@@ -371,7 +371,7 @@ def test_update_task_definition(
     session.commit()
 
     task.plugin_type = "plugin.new"
-    task.max_retries = 10
+    task.max_tries = 10
 
     repository.save(workflow)
     session.commit()

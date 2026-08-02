@@ -67,7 +67,7 @@ class TaskDefinitionModel(Base):
     key: Mapped[str] = mapped_column(String, nullable=False)
     plugin_type: Mapped[str] = mapped_column(String, nullable=False)
     configuration: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    max_retries: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_tries: Mapped[int] = mapped_column(Integer, nullable=False)
     workflow_definition: Mapped[WorkflowDefinitionModel] = relationship(
         back_populates="task_definitions",
     )

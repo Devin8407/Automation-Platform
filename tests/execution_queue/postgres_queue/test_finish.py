@@ -19,7 +19,7 @@ def test_finish_removes_completed_task_from_queue(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -47,7 +47,7 @@ def test_finish_enqueues_runnable_children(
     task_execution = task_execution_factory()
     child = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -80,7 +80,7 @@ def test_finish_removes_parent_and_enqueues_children_atomically(
     task_execution = task_execution_factory()
     child = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -108,7 +108,7 @@ def test_finish_with_invalid_claim_does_nothing(
     task_execution = task_execution_factory()
     child = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -150,7 +150,7 @@ def test_finish_is_idempotent(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -175,7 +175,7 @@ def test_finish_duplicate_children_are_ignored(
     task_execution = task_execution_factory()
     child = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -208,7 +208,7 @@ def test_finish_handles_empty_runnable_tasks(
 
     task_execution = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
+    postgres_queue.enqueue([task_execution.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -230,8 +230,8 @@ def test_finish_preserves_existing_queue_entries(
     task_execution = task_execution_factory()
     unrelated = task_execution_factory()
 
-    postgres_queue.enqueue(task_execution.id)
-    postgres_queue.enqueue(unrelated.id)
+    postgres_queue.enqueue([task_execution.id])
+    postgres_queue.enqueue([unrelated.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -256,8 +256,8 @@ def test_finish_does_not_duplicate_existing_children(
     parent = task_execution_factory()
     child = task_execution_factory()
 
-    postgres_queue.enqueue(parent.id)
-    postgres_queue.enqueue(child.id)
+    postgres_queue.enqueue([parent.id])
+    postgres_queue.enqueue([child.id])
 
     claim = postgres_queue.claim(uuid4())
 
@@ -288,8 +288,8 @@ def test_finish_does_not_duplicate_already_queued_child(
     parent = task_execution_factory()
     child = task_execution_factory()
 
-    postgres_queue.enqueue(parent.id)
-    postgres_queue.enqueue(child.id)
+    postgres_queue.enqueue([parent.id])
+    postgres_queue.enqueue([child.id])
 
     claim = postgres_queue.claim(uuid4())
 

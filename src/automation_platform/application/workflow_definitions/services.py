@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from ...domain import TaskDefinition, TriggerDefinition, WorkflowDefinition
 from ...persistence import UnitOfWork
 from ...plugins import InvalidPluginConfigurationError, TaskRegistry, TriggerRegistry
-from .exceptions import InvalidWorkflowDefinitionError
+from ..exceptions import InvalidWorkflowDefinitionError
 from .models import CreateTaskDefinition, CreateTriggerDefinition, CreateWorkflowDefinition
 
 
@@ -98,12 +98,22 @@ class WorkflowDefinitionService:
             InvalidWorkflowDefinitionError: If a task or dependency is invalid.
         """
 
+        if not tasks:
+            raise InvalidWorkflowDefinitionError(
+                "Workflow definition must contain at least one task."
+            )
+
         seen_keys = {task.key for task in tasks}
 
         if len(seen_keys) != len(tasks):
             raise InvalidWorkflowDefinitionError("Task keys are not all unique in workflow.")
 
         for task in tasks:
+            if task.max_tries < 1:
+                raise InvalidWorkflowDefinitionError(
+                    f"Task {task.key!r} has no available max tries: {task.max_tries!r}."
+                )
+
             if not self._task_registry.contains(task.plugin_type):
                 raise InvalidWorkflowDefinitionError(
                     f"Unknown task plugin type: {task.plugin_type!r}."
@@ -213,7 +223,7 @@ class WorkflowDefinitionService:
                 key=task.key,
                 configuration=task.configuration,
                 dependencies=[task_ids[dependency] for dependency in task.dependencies],
-                max_retries=task.max_retries,
+                max_tries=task.max_tries,
             )
             for task in tasks
         ]

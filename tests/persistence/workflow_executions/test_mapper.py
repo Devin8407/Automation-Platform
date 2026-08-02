@@ -103,6 +103,9 @@ def test_task_to_model(task_execution_factory) -> None:
     assert model.id == task.id
     assert model.workflow_execution_id == task.workflow_execution_id
     assert model.task_definition_id == task.task_definition_id
+    assert model.key == task.key
+    assert model.plugin_type == task.plugin_type
+    assert model.configuration == task.configuration
     assert model.status == task.status
     assert model.remaining_dependencies == task.remaining_dependencies
     assert model.parent_task_ids == task.parent_task_ids
@@ -123,6 +126,9 @@ def test_task_to_domain(task_execution_factory) -> None:
         id=task.id,
         workflow_execution_id=task.workflow_execution_id,
         task_definition_id=task.task_definition_id,
+        key=task.key,
+        plugin_type=task.plugin_type,
+        configuration=task.configuration,
         status=task.status,
         remaining_dependencies=task.remaining_dependencies,
         parent_task_ids=task.parent_task_ids,

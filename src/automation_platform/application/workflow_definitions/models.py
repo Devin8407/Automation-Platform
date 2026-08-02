@@ -23,7 +23,7 @@ class CreateTaskDefinition:
     key: str
     configuration: dict[str, Any]
     dependencies: list[str]
-    max_retries: int
+    max_tries: int
 
 
 @dataclass(frozen=True)

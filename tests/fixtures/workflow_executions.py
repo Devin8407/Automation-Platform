@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -34,6 +35,9 @@ def task_execution_factory() -> Callable[..., TaskExecution]:
         id: UUID | None = None,
         workflow_execution_id: UUID | None = None,
         task_definition_id: UUID | None = None,
+        key: str = "task",
+        plugin_type: str = "test.task",
+        configuration: dict[Any] | None = None,
         status: TaskStatus = TaskStatus.PENDING,
         remaining_dependencies: int = 0,
         remaining_tries: int = 0,
@@ -48,6 +52,9 @@ def task_execution_factory() -> Callable[..., TaskExecution]:
             id=id or uuid4(),
             workflow_execution_id=workflow_execution_id or uuid4(),
             task_definition_id=task_definition_id or uuid4(),
+            key=key,
+            plugin_type=plugin_type,
+            configuration=configuration or {},
             status=status,
             remaining_dependencies=remaining_dependencies,
             remaining_tries=remaining_tries,
@@ -73,7 +80,7 @@ def workflow_execution_factory(
         id: UUID | None = None,
         workflow_definition: WorkflowDefinition | None = None,
         workflow_definition_id: UUID | None = None,
-        status: WorkflowStatus = WorkflowStatus.PENDING,
+        status: WorkflowStatus = WorkflowStatus.RUNNING,
         task_executions: list[TaskExecution] | None = None,
         created_at: datetime | None = None,
         started_at: datetime | None = None,

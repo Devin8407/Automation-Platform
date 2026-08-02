@@ -27,7 +27,7 @@ def task_definition_factory() -> Callable[..., TaskDefinition]:
         plugin_type: str = "test.task",
         configuration: dict | None = None,
         dependencies: list[UUID] | None = None,
-        max_retries: int = 3,
+        max_tries: int = 3,
     ) -> TaskDefinition:
         return TaskDefinition(
             id=id or uuid4(),
@@ -35,7 +35,7 @@ def task_definition_factory() -> Callable[..., TaskDefinition]:
             plugin_type=plugin_type,
             configuration=configuration or {},
             dependencies=dependencies or [],
-            max_retries=max_retries,
+            max_tries=max_tries,
         )
 
     return factory
