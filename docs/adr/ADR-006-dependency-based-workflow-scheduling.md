@@ -1,4 +1,4 @@
-# ADR-008: Dependency-Based Workflow Scheduling
+# ADR-006: Dependency-Based Workflow Scheduling
 
 ## Status
 

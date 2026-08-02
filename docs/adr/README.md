@@ -28,3 +28,7 @@ The purpose of ADRs is to preserve architectural reasoning rather than simply re
 - [**ADR-013:** Eventual Queue Consistency Through Reconciliation](ADR-013-eventual-queue-consistency-through-reconciliation.md)
 - [**ADR-014:** Conditional SQL State Transitions](ADR-014-conditional-sql-state-transitions.md)
 - [**ADR-015:** Shared Database Infrastructure](ADR-015-shared-database-infrastructure.md)
+- [**ADR-016:** Use-Case Oriented Application Services](ADR-016-use-case-oriented-application-services.md)
+- [**ADR-017:** Execute Plugins Outside Persistence Transactions](ADR-017-execute-plugins-outside-persistence-transactions.md)
+- [**ADR-018:** Trigger Specific Runtime Mechanisms](ADR-018-trigger-specific-runtime-mechanisms.md)
+- [**ADR-019:** At-Least-Once Task Execution Without Persistence Fencing](ADR-019-at-least-once-task-execution-without-persistence-fencing.md)

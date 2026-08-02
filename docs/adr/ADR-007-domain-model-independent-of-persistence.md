@@ -1,4 +1,4 @@
-# ADR-006: Domain Model Independent of Persistence
+# ADR-007: Domain Model Independent of Persistence
 
 ## Status
 

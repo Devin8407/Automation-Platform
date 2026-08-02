@@ -1,4 +1,4 @@
-# ADR-008: Transition-Oriented Persistence
+# ADR-011: Transition-Oriented Persistence
 
 ## Status
 

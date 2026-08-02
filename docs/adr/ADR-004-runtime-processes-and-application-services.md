@@ -6,67 +6,122 @@ Accepted
 
 ## Context
 
-The Automation Platform is composed of multiple runtime processes, including an API server, background workers, and a scheduler.
+The Automation Platform contains multiple runtime mechanisms, including:
 
-A decision was required regarding where business logic should reside.
+- API processes.
+- Worker processes.
+- Scheduler processes.
+- Webhook handlers.
+- Future event consumers.
 
-One option was to allow each runtime process to implement its own orchestration logic.
+A decision was required regarding where process-control responsibilities end and business orchestration begins.
 
-Another option was to centralize workflow orchestration within a shared application layer that all runtime processes invoke.
+Allowing each runtime to implement workflow behavior independently would duplicate business logic and couple orchestration to particular delivery mechanisms.
+
+At the same time, moving process-specific concerns such as queue polling, heartbeats, HTTP transport, or trigger event reception into Application services would couple business capabilities to runtime infrastructure.
 
 ## Decision
 
-Runtime processes will remain thin and will contain only process-specific responsibilities such as receiving HTTP requests, polling queues, or evaluating trigger conditions.
+Runtime processes will remain thin control mechanisms responsible for determining when Application capabilities should be invoked.
 
-Business logic and workflow orchestration will reside exclusively within the Application Layer.
+Runtime responsibilities include:
 
-Each runtime process invokes shared application services rather than implementing orchestration independently.
+- Process loops.
+- Polling and sleeping.
+- Queue claims.
+- Queue heartbeats.
+- Lease handling.
+- Queue finish/release operations.
+- HTTP transport.
+- Trigger-specific event reception.
+- Process startup and shutdown.
 
-This establishes a clear separation between runtime concerns and business capabilities.
+The Application Layer owns complete business use cases and workflow orchestration.
+
+Application responsibilities include:
+
+- Workflow definition management.
+- Workflow execution creation.
+- Task processing orchestration.
+- TaskContext construction.
+- Plugin resolution.
+- TaskResult interpretation.
+- Persistence transaction boundaries.
+- Determining resulting business actions.
+
+Runtime processes invoke Application services rather than implementing workflow state transitions or business rules themselves.
+
+The guiding distinction is:
+
+> Runtime determines when a capability should be invoked.
+
+> Application determines what business operation should happen.
+
+Runtime processes may use infrastructure directly when that infrastructure represents runtime control rather than business state, such as Worker interaction with the Execution Queue.
 
 ## Alternatives Considered
 
 ### Runtime-Specific Business Logic
 
-**Pros**
-
-- Simple to begin implementing
-- Minimal initial abstraction
-
-**Cons**
-
-- Business logic becomes duplicated
-- Difficult to maintain consistent behavior
-- Harder to test independently
-- Adding new runtime processes requires duplicating orchestration
-
-### Shared Application Layer (Selected)
+Each runtime implements the orchestration required for its use case.
 
 **Pros**
 
-- Single implementation of workflow orchestration
-- Consistent behavior across all runtime processes
-- Improved testability
-- Easier future expansion to additional runtimes
-- Clear separation of responsibilities
+- Minimal initial abstraction.
+- Direct implementation.
 
 **Cons**
 
-- Additional architectural abstraction
-- Requires careful definition of application boundaries
+- Duplicates business logic.
+- Couples business behavior to transport/process mechanisms.
+- Produces inconsistent behavior across runtimes.
+- Makes independent testing difficult.
+
+### Application Owns All Runtime Infrastructure
+
+Application services also manage worker loops, queue claims, HTTP behavior, and trigger polling.
+
+**Pros**
+
+- Centralizes more behavior.
+
+**Cons**
+
+- Couples business logic to runtime infrastructure.
+- Makes Application services long-running and stateful.
+- Reduces queue and transport independence.
+- Blurs the boundary between invocation and business behavior.
+
+### Thin Runtimes with Shared Application Services (Selected)
+
+Runtime processes own control flow and invocation mechanisms while Application services own complete business operations.
+
+**Pros**
+
+- Centralizes business behavior.
+- Keeps runtimes focused.
+- Preserves queue and transport independence.
+- Makes Application services independently testable.
+- Allows different runtimes to reuse the same capabilities.
+
+**Cons**
+
+- Requires carefully defining the runtime/Application boundary.
+- Some runtime processes still require meaningful infrastructure coordination.
 
 ## Consequences
 
 ### Positive
 
-- Runtime processes remain simple and focused
-- Business logic is reusable across API, workers, schedulers, and future runtimes
-- Improves maintainability and testing
-- Reinforces dependency inversion
+- Workflow business logic has one implementation.
+- Runtimes remain focused on process and delivery concerns.
+- Worker queue mechanics remain outside Application.
+- New entry points can reuse existing Application capabilities.
+- Application services can be tested without running complete runtime processes.
 
 ### Negative
 
-- Requires additional coordination when defining application services
-- Introduces another architectural layer to understand
+- Runtime processes are thin but not logic-free.
+- Developers must distinguish runtime coordination from business orchestration.
 
-Separating runtime processes from application services produces a more maintainable architecture while allowing new entry points to reuse existing business capabilities.
+This separation allows runtime mechanisms to vary independently while preserving a single implementation of each business capability.

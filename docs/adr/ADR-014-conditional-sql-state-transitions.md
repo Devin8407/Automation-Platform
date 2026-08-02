@@ -1,4 +1,4 @@
-# ADR-011: Conditional SQL State Transitions
+# ADR-014: Conditional SQL State Transitions
 
 ## Status
 

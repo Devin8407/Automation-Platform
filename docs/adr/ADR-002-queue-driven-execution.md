@@ -6,73 +6,96 @@ Accepted
 
 ## Context
 
-The Automation Platform executes workflows consisting of one or more tasks. A decision was needed regarding how task execution should be coordinated.
+The Automation Platform executes workflows consisting of one or more tasks.
 
-The simplest approach would be for the application layer to execute tasks synchronously when a workflow is started. While straightforward, this tightly couples workflow orchestration with task execution, prevents asynchronous processing, and limits future scalability.
+A decision was required regarding how runnable task executions should be delivered to execution processes.
 
-The project is intended to demonstrate production-style backend architecture, including background workers and asynchronous execution.
+The simplest approach would be for the Application Layer to execute tasks synchronously when a workflow is started. While straightforward, this would tightly couple workflow orchestration to physical execution, block callers while work executes, and prevent independent worker processes from processing tasks concurrently.
+
+The project is intended to support asynchronous execution, multiple workers, failure recovery, and replaceable queue infrastructure.
 
 ## Decision
 
-The application layer will orchestrate workflow execution by placing runnable task executions onto an execution queue rather than executing them directly.
+Runnable task executions will be delivered through an Execution Queue and processed asynchronously by Worker runtimes.
 
-Background workers will invoke shared application services to process claimed task executions and persist execution state.
+The Execution Queue is an architectural abstraction responsible for work delivery and temporary worker ownership.
 
-The execution queue is treated as an architectural abstraction. The initial implementation will use PostgreSQL as the queue backend, allowing the implementation to evolve in the future without changing orchestration logic.
+The initial implementation uses PostgreSQL, while callers depend only on the queue interface so that a different implementation such as RabbitMQ may be introduced later.
+
+Runtime processes own queue-specific lifecycle concerns, including:
+
+- Claiming runnable work.
+- Maintaining worker leases.
+- Heartbeating claims.
+- Releasing retryable work.
+- Finishing claims.
+
+The Application Layer does not own queue claims or lease state.
+
+Instead, Application services perform complete business use cases and return the resulting business disposition to the runtime.
+
+For task processing, this includes:
+
+- Whether the currently claimed task should be retried.
+- Which child task executions became newly runnable.
+
+The Worker uses this result to perform the appropriate queue operation.
+
+Workflow startup may enqueue initial runnable tasks as part of its orchestration, but queue delivery and claim lifecycle remain infrastructure/runtime concerns.
 
 ## Alternatives Considered
 
 ### Synchronous Execution
 
-The application layer executes each task directly.
+The Application Layer directly executes tasks as workflows progress.
 
 **Pros**
 
-* Very simple implementation
-* Minimal infrastructure
-* Easier to understand initially
+- Simple implementation.
+- Minimal infrastructure.
+- Straightforward execution flow.
 
 **Cons**
 
-* Couples orchestration and execution
-* API requests remain blocked until completion
-* Difficult to scale independently
-* Makes background processing difficult
-* Limits future extensibility
+- Couples workflow orchestration to physical execution.
+- Blocks callers until work completes.
+- Prevents independent worker scaling.
+- Makes worker recovery difficult.
+- Limits future extensibility.
 
 ### Queue-Driven Execution (Selected)
 
-Runnable work is enqueued by application layer for background workers to claim.
+Runnable work is delivered through an Execution Queue and processed by independent Worker runtimes.
 
 **Pros**
 
-* Enables multiple runtime processes to share a common orchestration model.
-* Separates orchestration from execution
-* Enables asynchronous processing
-* Supports independent worker processes
-* Better represents production workflow systems
-* Allows future replacement of the queue implementation
+- Enables asynchronous execution.
+- Separates workflow orchestration from work delivery.
+- Supports multiple concurrent workers.
+- Supports worker failure recovery.
+- Allows queue implementations to evolve independently.
+- Keeps queue lease mechanics outside business orchestration.
 
 **Cons**
 
-* Additional architectural complexity
-* Requires worker coordination
-* Introduces queue management responsibilities
+- Introduces additional infrastructure.
+- Requires worker coordination.
+- Introduces eventual-consistency and recovery concerns between durable workflow state and queue state.
 
 ## Consequences
 
 ### Positive
 
-* Clear separation of responsibilities
-* API requests can return immediately
-* Workers remain independent of workflow logic
-* Future support for multiple workers becomes straightforward
-* Queue implementation can evolve without affecting orchestration
+- API and trigger runtimes do not execute arbitrary workflow tasks directly.
+- Workers remain independent of workflow business rules.
+- Application services remain independent of queue lease semantics.
+- Multiple workers can process independent task executions concurrently.
+- Queue infrastructure can evolve without changing workflow orchestration.
 
 ### Negative
 
-* More moving parts than synchronous execution
-* Additional execution state must be tracked
-* Queue failures and worker recovery must be handled
+- The system contains more moving parts than synchronous execution.
+- Queue delivery and durable workflow state must be coordinated across separate boundaries.
+- Worker recovery and duplicate physical execution must be considered explicitly.
 
-This decision establishes a clean architectural boundary between workflow orchestration and task execution that supports future scalability while remaining appropriate for a modular monolith.
+Queue-driven execution establishes a clean separation between durable workflow orchestration and asynchronous work delivery while allowing runtime and queue infrastructure to evolve independently.

@@ -1,4 +1,4 @@
-# ADR-013: Shared Database Infrastructure
+# ADR-015: Shared Database Infrastructure
 
 ## Status
 

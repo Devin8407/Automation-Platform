@@ -1,4 +1,4 @@
-# ADR-009: Lease-Based Queue Ownership
+# ADR-012: Lease-Based Queue Ownership
 
 ## Status
 
