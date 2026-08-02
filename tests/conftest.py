@@ -8,4 +8,5 @@ pytest_plugins = (
     "tests.fixtures.application.application",
     "tests.fixtures.application.workflow_definitions",
     "tests.fixtures.application.task_processing",
+    "tests.fixtures.application.integration",
 )

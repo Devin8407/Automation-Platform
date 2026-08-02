@@ -1,3 +1,3 @@
-from .registry import TriggerRegistry
+from .registry import Trigger, TriggerRegistry
 
-__all__ = ["TriggerRegistry"]
+__all__ = ["Trigger", "TriggerRegistry"]

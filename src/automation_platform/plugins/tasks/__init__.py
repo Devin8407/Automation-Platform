@@ -1,3 +1,3 @@
-from .registry import TaskRegistry
+from .registry import Task, TaskRegistry
 
-__all__ = ["TaskRegistry"]
+__all__ = ["Task", "TaskRegistry"]
