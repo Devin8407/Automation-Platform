@@ -68,11 +68,17 @@ def infrastructure_factory(
 
 @pytest.fixture(autouse=True)
 def clear_database(engine):
+    tables = [
+        "execution_queue",
+        "task_executions",
+        "workflow_executions",
+        "workflow_definitions",
+    ]
+
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE execution_queue CASCADE"))
-        # truncate other tables too if needed
+        conn.execute(text(f"TRUNCATE {', '.join(tables)} RESTART IDENTITY CASCADE"))
 
     yield
 
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE execution_queue CASCADE"))
+        conn.execute(text(f"TRUNCATE {', '.join(tables)} RESTART IDENTITY CASCADE"))

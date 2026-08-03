@@ -18,6 +18,7 @@ def settings_factory() -> Callable[..., Settings]:
         queue_lease_timeout: timedelta | None = timedelta(seconds=30),
         worker_poll_interval: timedelta | None = timedelta(seconds=3),
         worker_heartbeat_interval: timedelta | None = timedelta(seconds=10),
+        reconciliation_interval: timedelta | None = timedelta(seconds=30),
         log_level: str = "low",
     ) -> Settings:
         return Settings(
@@ -27,6 +28,7 @@ def settings_factory() -> Callable[..., Settings]:
             queue_lease_timeout,
             worker_poll_interval,
             worker_heartbeat_interval,
+            reconciliation_interval,
             log_level,
         )
 

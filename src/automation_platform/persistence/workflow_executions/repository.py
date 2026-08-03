@@ -111,6 +111,25 @@ class WorkflowExecutionRepository:
             )
         )
 
+    def find_runnable_ids(self) -> list[UUID]:
+        """Return runnable task execution identifiers.
+
+        A task execution is runnable when it is pending and has no unmet
+        dependencies.
+
+        Returns:
+            Identifiers of runnable task executions.
+        """
+
+        return list(
+            self._session.scalars(
+                select(TaskExecutionModel.id).where(
+                    TaskExecutionModel.status == TaskStatus.PENDING,
+                    TaskExecutionModel.remaining_dependencies == 0,
+                )
+            )
+        )
+
     def start_task(
         self,
         task_execution_id: UUID,

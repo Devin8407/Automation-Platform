@@ -1,24 +1,7 @@
 """Integration tests for application workflow execution."""
 
 from automation_platform.domain import TaskStatus, WorkflowStatus
-
-# ==================================================================================================
-# Helpers
-# ==================================================================================================
-
-
-def load_execution(uow_factory, workflow_execution_id):
-    """Load a workflow execution using real persistence."""
-
-    with uow_factory() as uow:
-        return uow.workflow_executions.load(workflow_execution_id)
-
-
-def get_task(execution, key):
-    """Return a task execution by key."""
-
-    return next(task for task in execution.task_executions if task.key == key)
-
+from tests.helpers import get_task, load_execution
 
 # ==================================================================================================
 # Workflow Start

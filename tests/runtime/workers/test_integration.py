@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import timedelta
 from threading import Thread
-from time import monotonic, sleep
 from uuid import uuid4
 
 from automation_platform.application.task_processing import TaskProcessingService
@@ -18,24 +17,12 @@ from automation_platform.domain import TaskStatus, WorkflowStatus
 from automation_platform.execution_queue.postgres import PostgresExecutionQueue
 from automation_platform.plugins import TaskRegistry, TriggerRegistry
 from automation_platform.runtime.worker import Worker
-
-# ==================================================================================================
-# Helpers
-# ==================================================================================================
-
-
-def load_execution(uow_factory, workflow_execution_id):
-    """Load a workflow execution using real persistence."""
-
-    with uow_factory() as uow:
-        return uow.workflow_executions.load(workflow_execution_id)
-
-
-def get_task(execution, key):
-    """Return a task execution by key."""
-
-    return next(task for task in execution.task_executions if task.key == key)
-
+from tests.helpers import (
+    get_task,
+    load_execution,
+    wait_for_queue_to_become_idle,
+    wait_for_terminal_workflow,
+)
 
 # ==================================================================================================
 # DAG Happy Path
@@ -143,7 +130,7 @@ def test_worker_executes_diamond_workflow_to_completion(
     worker_thread.start()
 
     try:
-        workflow_execution = _wait_for_terminal_workflow(
+        workflow_execution = wait_for_terminal_workflow(
             uow_factory,
             workflow_execution_id,
         )
@@ -265,7 +252,7 @@ def test_worker_retries_task_until_success(
     worker_thread.start()
 
     try:
-        execution = _wait_for_terminal_workflow(
+        execution = wait_for_terminal_workflow(
             uow_factory,
             workflow_execution_id,
         )
@@ -361,7 +348,7 @@ def test_exhausted_retries_fail_workflow_and_cancel_remaining_tasks(
     worker_thread.start()
 
     try:
-        execution = _wait_for_terminal_workflow(
+        execution = wait_for_terminal_workflow(
             uow_factory,
             workflow_execution_id,
         )
@@ -481,7 +468,7 @@ def test_cancelled_queued_task_does_not_execute(
     worker_thread.start()
 
     try:
-        _wait_for_queue_to_become_idle(
+        wait_for_queue_to_become_idle(
             queue,
             worker._worker_id,
         )
@@ -611,7 +598,7 @@ def test_two_workers_process_sibling_tasks(
     thread_b.start()
 
     try:
-        execution = _wait_for_terminal_workflow(
+        execution = wait_for_terminal_workflow(
             uow_factory,
             workflow_execution_id,
         )
@@ -637,59 +624,3 @@ def test_two_workers_process_sibling_tasks(
     }
 
     assert all(task.status is TaskStatus.COMPLETED for task in tasks.values())
-
-
-# ==================================================================================================
-# Private Helpers
-# ==================================================================================================
-
-
-def _wait_for_terminal_workflow(
-    uow_factory,
-    workflow_execution_id,
-    timeout: float = 5.0,
-):
-    """Wait for a WorkflowExecution to reach a terminal state."""
-
-    deadline = monotonic() + timeout
-
-    while monotonic() < deadline:
-        with uow_factory() as uow:
-            workflow_execution = uow.workflow_executions.load(workflow_execution_id)
-
-        if workflow_execution.status in {
-            WorkflowStatus.COMPLETED,
-            WorkflowStatus.FAILED,
-            WorkflowStatus.CANCELLED,
-        }:
-            return workflow_execution
-
-        sleep(0.01)
-
-    raise AssertionError(
-        f"Workflow execution {workflow_execution_id} did not terminate within {timeout} seconds."
-    )
-
-
-def _wait_for_queue_to_become_idle(
-    queue,
-    worker_id,
-    timeout: float = 2.0,
-):
-    """Wait until the worker has consumed all immediately claimable entries."""
-
-    deadline = monotonic() + timeout
-
-    while monotonic() < deadline:
-        claim = queue.claim(worker_id)
-
-        if claim is None:
-            return
-
-        # Do not steal work from the worker while checking. Return any claim
-        # acquired by this probe immediately.
-        queue.release(claim)
-
-        sleep(0.01)
-
-    raise AssertionError(f"Execution queue did not become idle within {timeout} seconds.")

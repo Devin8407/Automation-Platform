@@ -185,6 +185,88 @@ def test_create_and_load_child_task_ids(
 
 
 # ==============================================================================
+# find_runnable_ids()
+# ==============================================================================
+
+
+def test_find_runnable_ids_returns_pending_tasks_with_no_remaining_dependencies(
+    session: Session,
+    workflow_definition_factory,
+    task_definition_factory,
+    workflow_execution_factory,
+) -> None:
+    """Only pending task executions with no unmet dependencies are runnable."""
+
+    runnable_definition = task_definition_factory(key="runnable")
+    blocked_definition = task_definition_factory(key="blocked")
+    running_definition = task_definition_factory(key="running")
+    completed_definition = task_definition_factory(key="completed")
+
+    definition = workflow_definition_factory(
+        task_definitions=[
+            runnable_definition,
+            blocked_definition,
+            running_definition,
+            completed_definition,
+        ],
+    )
+
+    WorkflowDefinitionRepository(session).save(definition)
+    session.commit()
+
+    execution = workflow_execution_factory(
+        workflow_definition=definition,
+    )
+
+    runnable_task = execution.task_executions[0]
+    blocked_task = execution.task_executions[1]
+    running_task = execution.task_executions[2]
+    completed_task = execution.task_executions[3]
+
+    runnable_task.status = TaskStatus.PENDING
+    runnable_task.remaining_dependencies = 0
+
+    blocked_task.status = TaskStatus.PENDING
+    blocked_task.remaining_dependencies = 1
+
+    running_task.status = TaskStatus.RUNNING
+    running_task.remaining_dependencies = 0
+
+    completed_task.status = TaskStatus.COMPLETED
+    completed_task.remaining_dependencies = 0
+
+    repository = WorkflowExecutionRepository(session)
+
+    repository.create(execution)
+    session.commit()
+
+    assert repository.find_runnable_ids() == [runnable_task.id]
+
+
+def test_find_runnable_ids_returns_empty_when_no_tasks_are_runnable(
+    session: Session,
+    persisted_workflow_definition,
+    workflow_execution_factory,
+) -> None:
+    """No identifiers are returned when all task executions are blocked."""
+
+    execution = workflow_execution_factory(
+        workflow_definition=persisted_workflow_definition,
+    )
+
+    task = execution.task_executions[0]
+    task.status = TaskStatus.PENDING
+    task.remaining_dependencies = 1
+
+    repository = WorkflowExecutionRepository(session)
+
+    repository.create(execution)
+    session.commit()
+
+    assert repository.find_runnable_ids() == []
+
+
+# ==============================================================================
 # start_task()
 # ==============================================================================
 

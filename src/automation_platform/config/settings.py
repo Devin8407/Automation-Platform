@@ -13,4 +13,6 @@ class Settings:
     worker_poll_interval: timedelta
     worker_heartbeat_interval: timedelta
 
+    reconciliation_interval: timedelta
+
     log_level: str
