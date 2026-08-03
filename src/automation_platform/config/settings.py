@@ -10,6 +10,7 @@ class Settings:
     queue_type: str
     queue_lease_timeout: timedelta
 
-    worker_count: int
+    worker_poll_interval: timedelta
+    worker_heartbeat_interval: timedelta
 
     log_level: str

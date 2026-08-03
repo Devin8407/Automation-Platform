@@ -107,6 +107,35 @@ class FailOnceTask(IntegrationTask):
         )
 
 
+class RecordingTask(IntegrationTask):
+    """Task plugin that records how many times it executes."""
+
+    plugin_type = "recording"
+
+    executions = 0
+
+    def execute(self, context: TaskContext) -> TaskResult:
+        type(self).executions += 1
+
+        return TaskResult(
+            succeeded=True,
+            output=TaskOutput(
+                values={
+                    "executed": True,
+                }
+            ),
+        )
+
+
+@pytest.fixture
+def recording_task_type():
+    """Return the recording task plugin type."""
+
+    RecordingTask.executions = 0
+
+    return RecordingTask
+
+
 # ==================================================================================================
 # Test Registries
 # ==================================================================================================
@@ -124,6 +153,7 @@ class IntegrationTaskRegistry(TaskRegistry):
         self._register(InputTask)
         self._register(FailingTask)
         self._register(FailOnceTask)
+        self._register(RecordingTask)
 
 
 # ==================================================================================================
@@ -136,6 +166,7 @@ def task_registry() -> TaskRegistry:
     """Return a task registry containing integration-test plugins."""
 
     FailOnceTask.attempts = 0
+    RecordingTask.executions = 0
 
     return IntegrationTaskRegistry()
 
@@ -170,13 +201,13 @@ def workflow_definition_service(
 @pytest.fixture
 def workflow_start_service(
     uow_factory,
-    queue,
+    postgres_queue,
 ) -> WorkflowStartService:
     """Return a workflow start service backed by real persistence."""
 
     return WorkflowStartService(
         uow_factory=uow_factory,
-        queue=queue,
+        execution_queue=postgres_queue,
     )
 
 

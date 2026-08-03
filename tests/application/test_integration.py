@@ -28,23 +28,26 @@ def get_task(execution, key):
 def test_start_workflow_creates_execution_with_root_tasks(
     workflow_definition_service,
     workflow_start_service,
-    workflow_definition_factory,
-    task_definition_factory,
+    create_workflow_definition_factory,
+    create_task_definition_factory,
     uow_factory,
 ):
     """Starting a workflow should persist its execution graph."""
 
     definition_id = workflow_definition_service.create(
-        workflow_definition_factory(
+        create_workflow_definition_factory(
             tasks=[
-                task_definition_factory(
+                create_task_definition_factory(
                     key="root",
+                    plugin_type="successful",
                 ),
-                task_definition_factory(
+                create_task_definition_factory(
                     key="child",
+                    plugin_type="successful",
                     dependencies=["root"],
                 ),
-            ]
+            ],
+            triggers=[],
         )
     )
 
@@ -81,25 +84,26 @@ def test_processing_root_makes_child_runnable(
     workflow_definition_service,
     workflow_start_service,
     task_processing_service,
-    workflow_definition_factory,
-    task_definition_factory,
+    create_workflow_definition_factory,
+    create_task_definition_factory,
     uow_factory,
 ):
     """Completing a root task should make its dependent task runnable."""
 
     definition_id = workflow_definition_service.create(
-        workflow_definition_factory(
+        create_workflow_definition_factory(
             tasks=[
-                task_definition_factory(
+                create_task_definition_factory(
                     key="root",
                     plugin_type="successful",
                 ),
-                task_definition_factory(
+                create_task_definition_factory(
                     key="child",
                     plugin_type="successful",
                     dependencies=["root"],
                 ),
-            ]
+            ],
+            triggers=[],
         )
     )
 
@@ -135,25 +139,26 @@ def test_parent_output_is_passed_to_child(
     workflow_definition_service,
     workflow_start_service,
     task_processing_service,
-    workflow_definition_factory,
-    task_definition_factory,
+    create_workflow_definition_factory,
+    create_task_definition_factory,
     uow_factory,
 ):
     """Child plugins should receive persisted outputs from their parents."""
 
     definition_id = workflow_definition_service.create(
-        workflow_definition_factory(
+        create_workflow_definition_factory(
             tasks=[
-                task_definition_factory(
+                create_task_definition_factory(
                     key="parent",
                     plugin_type="successful",
                 ),
-                task_definition_factory(
+                create_task_definition_factory(
                     key="child",
                     plugin_type="input",
                     dependencies=["parent"],
                 ),
-            ]
+            ],
+            triggers=[],
         )
     )
 
@@ -193,27 +198,31 @@ def test_processing_all_tasks_completes_workflow(
     workflow_definition_service,
     workflow_start_service,
     task_processing_service,
-    workflow_definition_factory,
-    task_definition_factory,
+    create_workflow_definition_factory,
+    create_task_definition_factory,
     uow_factory,
 ):
     """Completing every task should complete the workflow."""
 
     definition_id = workflow_definition_service.create(
-        workflow_definition_factory(
+        create_workflow_definition_factory(
             tasks=[
-                task_definition_factory(
+                create_task_definition_factory(
                     key="task_a",
+                    plugin_type="successful",
                 ),
-                task_definition_factory(
+                create_task_definition_factory(
                     key="task_b",
+                    plugin_type="successful",
                     dependencies=["task_a"],
                 ),
-                task_definition_factory(
+                create_task_definition_factory(
                     key="task_c",
+                    plugin_type="successful",
                     dependencies=["task_b"],
                 ),
-            ]
+            ],
+            triggers=[],
         )
     )
 
@@ -258,21 +267,22 @@ def test_failed_task_retries_then_succeeds(
     workflow_definition_service,
     workflow_start_service,
     task_processing_service,
-    workflow_definition_factory,
-    task_definition_factory,
+    create_workflow_definition_factory,
+    create_task_definition_factory,
     uow_factory,
 ):
     """A retryable failure should remain running and later complete."""
 
     definition_id = workflow_definition_service.create(
-        workflow_definition_factory(
+        create_workflow_definition_factory(
             tasks=[
-                task_definition_factory(
+                create_task_definition_factory(
                     key="task",
                     plugin_type="fail_once",
                     max_tries=2,
                 )
-            ]
+            ],
+            triggers=[],
         )
     )
 
@@ -322,30 +332,31 @@ def test_terminal_failure_fails_workflow_and_cancels_remaining_tasks(
     workflow_definition_service,
     workflow_start_service,
     task_processing_service,
-    workflow_definition_factory,
-    task_definition_factory,
+    create_workflow_definition_factory,
+    create_task_definition_factory,
     uow_factory,
 ):
     """Exhausting a task's tries should fail its workflow and cancel remaining work."""
 
     definition_id = workflow_definition_service.create(
-        workflow_definition_factory(
+        create_workflow_definition_factory(
             tasks=[
-                task_definition_factory(
+                create_task_definition_factory(
                     key="failing",
                     plugin_type="failing",
                     max_tries=1,
                 ),
-                task_definition_factory(
+                create_task_definition_factory(
                     key="sibling",
                     plugin_type="successful",
                 ),
-                task_definition_factory(
+                create_task_definition_factory(
                     key="child",
                     plugin_type="successful",
                     dependencies=["failing"],
                 ),
-            ]
+            ],
+            triggers=[],
         )
     )
 
@@ -392,31 +403,36 @@ def test_join_task_waits_for_all_parent_tasks(
     workflow_definition_service,
     workflow_start_service,
     task_processing_service,
-    workflow_definition_factory,
-    task_definition_factory,
+    create_workflow_definition_factory,
+    create_task_definition_factory,
     uow_factory,
 ):
     """A task with multiple parents should run only after every parent completes."""
 
     definition_id = workflow_definition_service.create(
-        workflow_definition_factory(
+        create_workflow_definition_factory(
             tasks=[
-                task_definition_factory(
+                create_task_definition_factory(
                     key="root",
+                    plugin_type="successful",
                 ),
-                task_definition_factory(
+                create_task_definition_factory(
                     key="left",
+                    plugin_type="successful",
                     dependencies=["root"],
                 ),
-                task_definition_factory(
+                create_task_definition_factory(
                     key="right",
+                    plugin_type="successful",
                     dependencies=["root"],
                 ),
-                task_definition_factory(
+                create_task_definition_factory(
                     key="join",
+                    plugin_type="successful",
                     dependencies=["left", "right"],
                 ),
-            ]
+            ],
+            triggers=[],
         )
     )
 

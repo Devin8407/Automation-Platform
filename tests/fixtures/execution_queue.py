@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import timedelta
+from unittest.mock import Mock
 
 import pytest
 
@@ -58,3 +59,8 @@ def queue_factory(
         return build_execution_queue(infrastructure)
 
     return factory
+
+
+@pytest.fixture
+def mock_execution_queue():
+    return Mock(spec=ExecutionQueue)

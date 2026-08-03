@@ -47,3 +47,6 @@ pythonpath = ["src"]
 exclude_also = [
     "@abstractmethod",
 ]
+
+[project.scripts]
+automation-worker = "automation_platform.runtime.worker.bootstrap:run_worker"

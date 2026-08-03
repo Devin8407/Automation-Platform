@@ -16,7 +16,8 @@ def settings_factory() -> Callable[..., Settings]:
         echo_sql: bool = False,
         queue_type: str = "postgres",
         queue_lease_timeout: timedelta | None = timedelta(seconds=30),
-        worker_count: int = 1,
+        worker_poll_interval: timedelta | None = timedelta(seconds=3),
+        worker_heartbeat_interval: timedelta | None = timedelta(seconds=10),
         log_level: str = "low",
     ) -> Settings:
         return Settings(
@@ -24,7 +25,8 @@ def settings_factory() -> Callable[..., Settings]:
             echo_sql,
             queue_type,
             queue_lease_timeout,
-            worker_count,
+            worker_poll_interval,
+            worker_heartbeat_interval,
             log_level,
         )
 
