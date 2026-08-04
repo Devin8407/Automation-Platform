@@ -32,3 +32,4 @@ The purpose of ADRs is to preserve architectural reasoning rather than simply re
 - [**ADR-017:** Execute Plugins Outside Persistence Transactions](ADR-017-execute-plugins-outside-persistence-transactions.md)
 - [**ADR-018:** Trigger Specific Runtime Mechanisms](ADR-018-trigger-specific-runtime-mechanisms.md)
 - [**ADR-019:** At-Least-Once Task Execution Without Persistence Fencing](ADR-019-at-least-once-task-execution-without-persistence-fencing.md)
+- [**ADR-020:** Explicit Runtime Configuration and Composition Roots](ADR-020-explicit-runtime-configuration-and-composition-roots.md)

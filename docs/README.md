@@ -1,53 +1,104 @@
 # Documentation
 
-This directory contains the project's technical documentation.
+This directory contains the technical documentation for the Automation Platform.
 
-The documentation is organized by purpose, allowing readers to understand the project from high-level architectural concepts down to individual design decisions and implementation details.
+Documentation is organized by purpose, from high-level system architecture to subsystem design, runtime behavior, architectural decisions, and project planning.
+
+For a first introduction to the system, start with the [Architecture Overview](architecture/overview.md).
 
 ---
 
-# Structure
+# Architecture
 
-## Architecture
-
-Documentation describing the overall design of the system.
+Documentation describing the overall structure, execution model, and major layers of the platform.
 
 - [Architecture README](architecture/README.md)
 - [Architecture Overview](architecture/overview.md)
-- [Database Schema](architecture/database-schema.md)
 - [Execution Model](architecture/execution-model.md)
 - [Application Layer](architecture/application.md)
-- [Project Structure](architecture/project-structure.md)
+- [Domain Architecture](architecture/domain.md)
+- [Persistence Architecture](architecture/persistence.md)
+- [Database Schema](architecture/database-schema.md)
 - [Data Model](architecture/data-model.md)
+- [Project Structure](architecture/project-structure.md)
+
+These documents explain how the major components of the platform interact and where responsibilities are placed.
 
 ---
 
-## Architecture Decision Records (ADRs)
+# Subsystems
 
-Architectural decisions and the reasoning behind them.
+Documentation for major infrastructure and extension subsystems.
+
+## Execution Queue
+
+Describes runnable-work distribution, lease-based worker ownership, heartbeats, concurrency, and queue recovery behavior.
+
+- [Execution Queue](architecture/execution-queue.md)
+
+## Plugin System
+
+Describes plugin discovery, registration, interfaces, and the extension model used by tasks and triggers.
+
+- [Plugin Architecture](architecture/plugins.md)
+
+---
+
+# Runtime Processes
+
+Documentation for independently executable processes and their operational responsibilities.
+
+- [Worker](architecture/worker.md)
+- [Reconciler](architecture/reconciler.md)
+- [Scheduler](architecture/scheduler.md)
+
+Runtime documentation focuses on process lifecycle and coordination rather than duplicating business logic owned by the Application Layer.
+
+---
+
+# Architecture Decision Records
+
+Significant architectural decisions are documented as Architecture Decision Records (ADRs).
 
 - [ADR Index](adr/README.md)
 
+ADRs capture:
+
+- The problem or architectural question.
+- The chosen approach.
+- Alternatives considered.
+- Tradeoffs and consequences.
+
+They provide the reasoning behind decisions that may not be apparent from the final implementation alone.
+
 ---
 
-## Project Planning
+# Project Planning
 
-Documents describing the long-term direction of the project and current implementation priorities.
+Documents describing project direction and current implementation priorities.
 
 - [Project Roadmap](roadmap.md)
 - [Current Focus](current-focus.md)
 
+Planning documents describe intended work and should not be treated as documentation of already implemented behavior.
+
 ---
 
-# Documentation Philosophy
+# Documentation Levels
 
-Documentation is treated as a core part of the project rather than an afterthought.
+The documentation is intentionally organized at different levels of detail.
 
-The goals of the documentation are to:
-
-- Explain **what** the system does.
-- Explain **why** architectural decisions were made.
-- Provide a reliable reference during implementation.
-- Help future contributors (including future versions of myself) quickly understand the project.
-
-Documentation evolves alongside the implementation and should remain consistent with the codebase.
+```text
+README
+   │
+   ▼
+Architecture Overview
+   │
+   ├── Architecture and subsystem documentation
+   │
+   ├── Runtime documentation
+   │
+   └── Data and execution models
+   │
+   ▼
+Architecture Decision Records

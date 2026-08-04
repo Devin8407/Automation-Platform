@@ -2,44 +2,57 @@
 
 ## Purpose
 
-The Automation Platform is a production-style backend application for defining and executing automated workflows.
+The Automation Platform is a backend system for defining and executing automated workflows.
 
-The project is designed to demonstrate backend software engineering practices commonly found in modern infrastructure systems, including clean architecture, asynchronous execution, modular design, background workers, persistence, testing, dependency inversion, extensibility, and production-oriented engineering practices.
+The project is designed around production-oriented backend engineering practices, including:
 
-Rather than optimizing for feature count, the project prioritizes maintainability, clear architectural boundaries, and thoughtful engineering decisions that can be discussed and defended during technical interviews.
+- Asynchronous workflow execution
+- Dependency-based DAG scheduling
+- Concurrent background workers
+- Durable execution state
+- Queue-based work distribution
+- Failure recovery
+- Extensible task and trigger plugins
+- Explicit architectural boundaries
+- Automated testing and CI
+
+The project prioritizes correctness, maintainability, and well-defined responsibilities over maximizing feature count.
+
+---
+
+# Architectural Style
+
+The platform is a **modular monolith with independently executable runtime processes**.
+
+The system remains a single application and codebase, but its internal modules have explicit responsibilities and dependency boundaries.
+
+Several runtime processes provide independent entry points into the application:
+
+- API
+- Worker
+- Scheduler
+- Reconciler
+
+These processes share the same Domain, Application, Persistence, Queue, and Plugin infrastructure rather than operating as independent services.
+
+This provides many of the organizational benefits of service-oriented systems while retaining the deployment and development simplicity of a modular monolith.
 
 ---
 
 # Design Principles
 
-The architecture is guided by the following principles.
+The architecture follows several guiding principles:
 
-- Favor modularity over monolithic business logic.
-- Separate runtime concerns from business logic.
+- Separate business state from scheduling state.
+- Keep runtime processes thin.
+- Centralize business orchestration in the Application Layer.
+- Keep infrastructure concerns outside the Domain Layer.
 - Depend on abstractions rather than concrete implementations.
-- Prefer composition over inheritance.
-- Keep responsibilities small and well-defined.
-- Build incrementally while preserving architectural quality.
-- Introduce complexity only when it solves a real engineering problem.
-- Design for extensibility without over-engineering.
-
----
-
-# Architectural Philosophy
-
-The platform follows a modular monolith architecture.
-
-Although deployed as a single application, the system is organized into independent modules with clearly defined responsibilities and dependency boundaries.
-
-The architecture separates:
-
-- Runtime processes responsible for reacting to external events.
-- Application services responsible for workflow orchestration.
-- Domain models representing business concepts.
-- Persistence responsible for durable storage.
-- Plugin systems that extend supported triggers and task types.
-
-This separation allows each concern to evolve independently while maintaining a simple deployment model.
+- Prefer explicit state transitions over generic persistence operations.
+- Make concurrent operations safe at their persistence boundaries.
+- Use idempotency and reconciliation to recover from partial failures.
+- Introduce abstractions only when they solve a concrete problem.
+- Design for extension without prematurely introducing distributed-system complexity.
 
 ---
 
@@ -51,17 +64,15 @@ flowchart TD
     Client["Client"]
 
     API["API Runtime"]
-
     Scheduler["Scheduler Runtime"]
-
     Worker["Worker Runtime"]
+    Reconciler["Reconciler Runtime"]
 
     Application["Application Layer"]
 
     Queue["Execution Queue"]
 
     Tasks["Task Plugins"]
-
     Triggers["Trigger Plugins"]
 
     Persistence["Persistence Layer"]
@@ -72,232 +83,467 @@ flowchart TD
 
     API --> Application
 
+    Scheduler --> Application
     Scheduler --> Triggers
-    Triggers --> Application
 
     Worker --> Queue
     Worker --> Application
 
-    Application --> Queue
+    Reconciler --> Persistence
+    Reconciler --> Queue
+
     Application --> Persistence
+    Application --> Queue
     Application --> Tasks
+    Application --> Triggers
 
     Persistence --> DB
+    Queue --> DB
 ```
 
-The runtime processes provide different entry points into the system.
+The major responsibility split is:
 
-The application layer contains the business rules that orchestrate workflow execution.
-
-Workers never determine workflow progression, task implementations never understand workflow structure, and trigger implementations never understand execution.
-
-Each component has a single responsibility.
-
----
-
-# Runtime Processes
-
-The platform consists of multiple independent runtime processes.
-
-## API Runtime
-
-Receives HTTP requests, validates user input, and invokes application capabilities.
-
-The API contains minimal business logic and acts primarily as a transport layer.
+| Component | Responsibility |
+|---|---|
+| Runtime Processes | React to external events and coordinate existing application boundaries |
+| Application | Implement business capabilities and workflow orchestration |
+| Domain | Represent core workflow and execution concepts |
+| Persistence | Store durable state and enforce concurrency-safe transitions |
+| Execution Queue | Distribute runnable work and manage temporary worker ownership |
+| Task Plugins | Implement extensible units of executable behavior |
+| Trigger Plugins | Implement extensible trigger behavior |
 
 ---
 
-## Scheduler Runtime
+# Workflow Model
 
-Continuously evaluates trigger definitions.
+The platform separates reusable workflow definitions from runtime execution state.
 
-When a trigger condition is satisfied, the scheduler invokes the application layer to begin a new workflow execution.
+## Definitions
 
-The scheduler understands *when* workflows begin but not *how* they execute.
+A `WorkflowDefinition` describes a reusable workflow template.
+
+It owns:
+
+- Task definitions
+- Trigger definitions
+- Workflow metadata
+
+Each `TaskDefinition` describes:
+
+- A stable task key
+- Plugin type
+- Configuration
+- Dependencies
+- Retry policy
+
+Definitions describe **what should happen** and contain no execution-specific state.
+
+## Executions
+
+Starting a workflow creates an independent `WorkflowExecution`.
+
+Each workflow execution owns a set of `TaskExecution` objects representing the runtime state of its tasks.
+
+Task executions track information such as:
+
+- Status
+- Execution timestamps
+- Remaining retry state
+- Unmet dependency count
+- Runtime graph relationships
+- Task output
+
+Multiple executions of the same workflow definition may run concurrently without modifying the original definition.
 
 ---
 
-## Worker Runtime
+# Compiled Workflow Executions
 
-Continuously claims runnable task executions from the execution queue.
+Workflow definitions and workflow executions intentionally use different representations of the workflow graph.
 
-Workers invoke the application layer to process claimed tasks.
+Definitions represent the logical workflow structure.
 
-Workers intentionally contain no workflow orchestration logic.
+When execution begins, that structure is **compiled into execution-oriented state**.
+
+For example, a Task Execution contains runtime information such as:
+
+```text
+unmet dependency count
+child Task Execution IDs
+retry state
+execution status
+task output
+```
+
+Workers therefore do not need to repeatedly reconstruct the workflow graph from its reusable definition.
+
+The definition representation is optimized for authoring and reuse, while the execution representation is optimized for runtime progression.
+
+---
+
+# Dependency-Based Execution
+
+Workflows are modeled as directed acyclic graphs.
+
+For example:
+
+```text
+        A
+       / \
+      B   C
+       \ /
+        D
+```
+
+After A completes, B and C may execute concurrently.
+
+D becomes runnable only after both dependencies complete.
+
+Each Task Execution stores an unmet dependency count.
+
+When a task completes, Persistence atomically decrements the dependency counts of its children. A child becomes runnable when its count reaches zero.
+
+This supports both fan-out and fan-in while allowing independent tasks to execute concurrently.
 
 ---
 
 # Application Layer
 
-The application layer contains the orchestration logic for the platform.
+The Application Layer implements the platform's business capabilities.
 
-It is responsible for implementing business capabilities such as:
+Runtime processes invoke Application services rather than implementing workflow rules themselves.
 
-- Starting workflow executions
-- Processing task executions
-- Advancing workflow state
+Important capabilities include:
+
+- Creating and validating Workflow Definitions
+- Starting Workflow Executions
+- Compiling definitions into runtime Task Executions
+- Processing Task Executions
+- Constructing task execution context
+- Resolving task plugins
+- Handling task results
+- Managing retries and failures
 - Determining newly runnable work
-- Completing workflow executions
-- Handling failures and retries (future)
+- Completing Workflow Executions
 
-The application layer is intentionally independent from HTTP, background workers, and scheduling.
+The Application Layer decides **what should happen**.
 
-Every runtime process invokes the same application capabilities.
-
----
-
-# Domain Model
-
-The platform distinguishes between immutable workflow definitions and mutable execution state.
-
-## Workflow Definition
-
-A reusable automation template describing:
-
-- Trigger configuration
-- Task definitions
-- Workflow structure
-
-Workflow definitions are immutable during execution and may be executed many times.
+Persistence, Queue, and Plugins provide the mechanisms used to carry out those decisions.
 
 ---
 
-## Workflow Execution
+# Task Execution and Data Flow
 
-Represents a single runtime instance of a workflow.
+Task plugins receive execution information through a `TaskContext`.
 
-Each execution tracks its own:
+A context contains the task's configuration together with outputs from its completed dependencies.
 
-- Status
-- Timestamps
-- Execution history
-- Runtime progress
+Plugins return a `TaskResult`, which the Application Layer interprets and persists.
 
-Multiple executions may exist simultaneously for the same workflow definition.
+Conceptually:
+
+```text
+TaskDefinition configuration
+          +
+dependency outputs
+          │
+          ▼
+     TaskContext
+          │
+          ▼
+      Task Plugin
+          │
+          ▼
+      TaskResult
+          │
+          ▼
+Application / Persistence
+```
+
+Plugins therefore remain independent of workflow persistence and orchestration.
+
+Outputs are associated with stable task keys, allowing workflows to contain multiple tasks using the same plugin type without ambiguity.
 
 ---
 
-## Task Definition
+# Persistence and Concurrency
 
-Describes a unit of work within a workflow.
+Persistence is the authoritative source of workflow execution state.
 
-Task definitions specify:
+The execution repositories are **transition-oriented** rather than generic CRUD repositories.
 
-- Task type
-- Configuration
-- Parameters
+Instead of:
 
-Task definitions contain no runtime state.
+```text
+load aggregate
+    ↓
+modify arbitrary state
+    ↓
+save entire aggregate
+```
+
+Persistence exposes explicit lifecycle transitions such as:
+
+```text
+start task
+complete task
+retry task
+```
+
+These transitions are implemented using conditional SQL operations that verify the expected current state before making changes.
+
+This prevents stale or duplicate Workers from blindly overwriting execution state.
 
 ---
 
-## Task Execution
+## Concurrent Workflow Progression
 
-Represents the runtime state of an individual task.
+Concurrency correctness is handled at the database boundary rather than through workflow-wide application locks.
 
-Task executions maintain execution-specific information such as:
+When multiple parent tasks complete concurrently, child dependency counts are decremented atomically in PostgreSQL.
 
-- Current status
-- Execution timestamps
-- Retry information
-- Runtime metadata
+For example:
 
-Task executions are created whenever a workflow execution begins.
+```text
+B ──┐
+    ├──► D
+C ──┘
+```
+
+B and C may complete simultaneously without losing either dependency update.
+
+Workflow completion is similarly derived from durable Task Execution state rather than maintained through a shared mutable task counter.
+
+This allows independent tasks within the same workflow to progress concurrently.
+
+---
+
+# Execution Queue
+
+The Execution Queue contains runnable Task Execution IDs.
+
+It deliberately does not duplicate workflow business state.
+
+The Queue owns:
+
+- Enqueueing runnable work
+- Claiming work
+- Worker leases
+- Heartbeats
+- Lease expiration and reclamation
+- Releasing retryable work
+- Finishing claimed work
+
+Persistence remains authoritative for:
+
+- Task status
+- Workflow status
+- Dependencies
+- Retries
+- Outputs
+
+This separation keeps the Queue focused on **work delivery**, while Persistence owns **execution correctness**.
+
+---
+
+# Lease-Based Worker Coordination
+
+Workers temporarily own queued work through renewable leases.
+
+A claim contains a unique claim token identifying the current ownership instance.
+
+While processing a task, the Worker periodically renews its lease through heartbeats.
+
+If the lease expires, another Worker may reclaim the work.
+
+Queue mutations validate the current claim token, preventing stale Workers from modifying Queue state after ownership has changed.
+
+PostgreSQL queue claiming uses:
+
+```sql
+FOR UPDATE SKIP LOCKED
+```
+
+allowing multiple Workers to claim independent work concurrently without blocking one another.
+
+---
+
+# Failure Recovery and Reconciliation
+
+Persistence and the Execution Queue intentionally use separate transactional boundaries.
+
+A successful task normally follows:
+
+```text
+execute task
+    ↓
+commit durable state transition
+    ↓
+finish Queue claim
+    ↓
+enqueue newly runnable work
+```
+
+This creates a narrow failure window:
+
+```text
+Persistence commits
+    ↓
+process crashes
+    ↓
+Queue update never occurs
+```
+
+The durable state remains correct, but newly runnable work may temporarily be absent from the Queue.
+
+The platform repairs this through a dedicated **Reconciler Runtime**.
+
+The Reconciler periodically finds tasks that are durably runnable:
+
+```text
+PENDING
+AND
+unmet dependencies = 0
+```
+
+and idempotently enqueues them.
+
+Because Queue insertion is idempotent, normal execution and reconciliation may safely attempt to enqueue the same task.
+
+This provides eventual recovery without requiring Persistence and Queue to participate in a distributed transaction.
 
 ---
 
 # Plugin Architecture
 
-The platform provides two primary extension points.
+Tasks and triggers are extensible through a generic plugin system.
 
-## Trigger Plugins
+The plugin infrastructure provides:
 
-Trigger plugins determine **when** workflows should begin.
+```text
+generic discovery
+        ↓
+generic registry
+        ↓
+typed task / trigger registries
+        ↓
+plugin implementations
+```
 
-Examples include:
+Each plugin exposes a stable type identifier and configuration validation contract.
 
-- Manual
-- Scheduled
-- Webhook
-- File System
-
-New trigger types can be introduced without modifying workflow orchestration.
-
----
+Application code resolves implementations through registries rather than containing conditional dispatch logic for every supported type.
 
 ## Task Plugins
 
-Task plugins perform individual units of work.
+Task plugins execute units of workflow behavior.
 
-Examples include:
+Their contract is conceptually:
 
-- HTTP Request
-- Generate CSV
-- Send Email
-- Delay
-- Execute Python Script
+```python
+execute(context: TaskContext) -> TaskResult
+```
 
-Task implementations remain completely independent from workflow orchestration.
+They do not directly manipulate:
 
-New task types can be introduced without modifying the worker or application layer.
+- Workflow state
+- Task Execution persistence
+- Execution Queue state
+- Application orchestration
 
----
+## Trigger Plugins
 
-# Execution Model
+Trigger plugins provide extensible behavior for determining when workflows should begin.
 
-Workflow execution is asynchronous.
-
-When a workflow begins:
-
-1. A new Workflow Execution is created.
-2. Runtime Task Executions are created.
-3. Runnable task executions are placed onto the execution queue.
-4. Workers claim queued task executions.
-5. The application layer processes completed tasks.
-6. Newly runnable task executions are queued.
-7. The workflow completes when all task executions have finished.
-
-The execution queue stores runnable task executions rather than entire workflows.
-
-This allows multiple workers to process independent work while the application layer remains responsible for orchestration.
+Mechanism-specific runtime infrastructure, such as durable chronological scheduling state, remains separate from the reusable trigger implementation.
 
 ---
 
-# Component Responsibilities
+# Runtime Processes
 
-| Component | Responsibility |
-|-----------|----------------|
-| Runtime Processes | React to external events and invoke application capabilities. |
-| Application Layer | Implement workflow orchestration and business rules. |
-| Domain | Represent business concepts and execution state. |
-| Persistence | Store and retrieve durable system state. |
-| Execution Queue | Distribute runnable work between workers. |
-| Trigger Plugins | Determine when workflows begin. |
-| Task Plugins | Execute individual units of work. |
+## Worker
+
+The Worker:
+
+1. Claims runnable work from the Queue.
+2. Maintains the claim through heartbeats.
+3. Invokes the Application Layer to process the task.
+4. Releases retryable work or finishes completed work.
+5. Repeats.
+
+If claim ownership can no longer be trusted, the Worker avoids modifying Queue state using the potentially stale claim.
+
+## Reconciler
+
+The Reconciler periodically repairs runnable tasks that are missing from the Queue.
+
+It coordinates Persistence and Queue abstractions without implementing workflow business logic.
+
+## Scheduler
+
+The Scheduler processes durable trigger state and initiates workflows when trigger conditions become satisfied.
+
+Scheduling state is designed to remain durable and safe under multiple Scheduler processes rather than existing only in memory.
+
+## API
+
+The API provides the external HTTP boundary and delegates business operations to the Application Layer.
 
 ---
 
-# Extensibility
+# Runtime Infrastructure
 
-The architecture intentionally favors extension over modification.
+Each independently executable runtime has its own bootstrap module that acts as a composition root.
 
-New capabilities should be introduced by adding new implementations rather than modifying existing orchestration logic.
+Startup follows the general pattern:
 
-Examples include:
+```text
+environment
+    ↓
+Settings
+    ↓
+logging configuration
+    ↓
+shared infrastructure
+    ↓
+Persistence / Queue / Plugins
+    ↓
+Application services
+    ↓
+Runtime
+```
 
-- New trigger plugins
-- New task plugins
-- Alternative queue implementations
-- Additional runtime processes
-- Alternative persistence implementations
+Configuration is loaded from environment variables into an immutable Settings object and passed explicitly during dependency construction rather than exposed through global application state.
 
-This approach follows the Open/Closed Principle while keeping the core architecture stable.
+Long-running runtimes support graceful shutdown through stop events and OS signal handling.
+
+---
+
+# Testing Strategy
+
+Testing is divided according to architectural responsibility.
+
+**Unit tests** verify isolated application behavior, plugins, runtime lifecycle logic, heartbeat handling, and failure paths.
+
+**PostgreSQL integration tests** verify database-dependent behavior such as atomic state transitions, queue claims, leases, row locking, dependency updates, and idempotency.
+
+**System tests** verify important cross-layer properties using real components, including:
+
+- DAG execution
+- Fan-out and fan-in
+- Dependency output propagation
+- Retries and terminal failures
+- Multiple Workers
+- Recovery of stranded runnable work
+
+The goal is to test concurrency and reliability properties at the layer where those guarantees are actually implemented.
 
 ---
 
 # Major Architectural Decisions
 
-Significant architectural decisions are documented using Architecture Decision Records (ADRs).
+Significant architectural decisions are documented through Architecture Decision Records.
 
 - [**ADR-001:** Modular Monolith](../adr/ADR-001-modular-monolith.md)
 - [**ADR-002:** Queue-Driven Execution](../adr/ADR-002-queue-driven-execution.md)
@@ -310,28 +556,53 @@ Significant architectural decisions are documented using Architecture Decision R
 - [**ADR-012:** Lease Based Queue Ownership](../adr/ADR-012-lease-based-queue-ownership.md)
 - [**ADR-013:** Eventual Queue Consistency Through Reconciliation](../adr/ADR-013-eventual-queue-consistency-through-reconciliation.md)
 
-These documents explain the context, alternatives considered, tradeoffs, and consequences behind each decision.
+ADRs preserve the context, alternatives, tradeoffs, and consequences behind decisions that would otherwise be difficult to infer from the final implementation.
 
 ---
 
 # Future Evolution
 
-The architecture intentionally supports future enhancements without requiring fundamental redesign.
+The architecture leaves room for additional capabilities without requiring fundamental redesign.
 
-Potential future capabilities include:
+Potential future additions include:
 
-- Parallel task execution
-- Directed acyclic graph (DAG) workflows
-- Retry policies
 - Workflow versioning
-- Distributed workers
-- RabbitMQ-backed queues
-- Redis integration
-- Metrics and observability
-- AI-assisted workflow creation
+- Conditional workflow branches
+- Additional task and trigger plugins
+- Alternative Queue implementations such as RabbitMQ
+- Transactional Outbox for stronger cross-system delivery guarantees
+- Metrics and distributed tracing
+- Operational workflow inspection
+- Richer API capabilities
 
-These features are intentionally deferred until they solve meaningful engineering problems.
+These features are intentionally deferred until they solve concrete requirements.
 
 ---
 
-Additional architectural details are documented in this directory, including the execution model, application layer, project structure, and conceptual data model.
+# Summary
+
+The Automation Platform combines:
+
+```text
+reusable workflow definitions
+        +
+compiled DAG executions
+        +
+asynchronous task processing
+        +
+concurrent background workers
+        +
+lease-based queue ownership
+        +
+atomic persistence transitions
+        +
+idempotent scheduling
+        +
+failure reconciliation
+        +
+extensible task and trigger behavior
+```
+
+The system remains a modular monolith, but its internal boundaries and independently executable runtimes allow execution, scheduling, recovery, persistence, and extensibility to evolve independently.
+
+The architecture is designed around explicit correctness, concurrency, recoverability, and maintainability while avoiding distributed-system complexity that the current requirements do not justify.
