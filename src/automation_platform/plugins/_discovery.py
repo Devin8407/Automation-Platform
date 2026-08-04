@@ -40,10 +40,16 @@ def _import_implementation_modules(interface: type[T]) -> Iterator[ModuleType]:
         yield import_module(f"{implementations_package.__name__}.{module_info.name}")
 
 
-def _find_plugin_implementations(module: ModuleType, interface: type[T]) -> Iterator[type[T]]:
-    """Yield every class in the module that implements the interface."""
+def _find_plugin_implementations(
+    module: ModuleType,
+    interface: type[T],
+) -> Iterator[type[T]]:
+    """Yield plugin implementations defined in the module."""
 
     for _, candidate in inspect.getmembers(module, inspect.isclass):
+        if candidate.__module__ != module.__name__:
+            continue
+
         if candidate is interface:
             continue
 

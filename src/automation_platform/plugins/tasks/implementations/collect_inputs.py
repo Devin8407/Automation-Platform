@@ -4,7 +4,7 @@ from typing import Any, ClassVar
 
 from ....domain import TaskContext, TaskOutput, TaskResult
 from ...exceptions import InvalidPluginConfigurationError
-from .._interface import Task
+from ..interface import Task
 
 
 class CollectInputsTask(Task):

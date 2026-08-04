@@ -1,7 +1,7 @@
 """Registry of workflow task plugins."""
 
 from .._registry import PluginRegistry
-from ._interface import Task
+from .interface import Task
 
 
 class TaskRegistry(PluginRegistry[Task]):
