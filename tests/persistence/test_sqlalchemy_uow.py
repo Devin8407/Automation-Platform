@@ -11,6 +11,7 @@ def test_factory_creates_unit_of_work(uow_factory: SQLAlchemyUnitOfWorkFactory) 
 
 
 def test_uow_constructs_repositories(uow) -> None:
+    assert uow.chronological_triggers is not None
     assert uow.workflow_definitions is not None
     assert uow.workflow_executions is not None
 

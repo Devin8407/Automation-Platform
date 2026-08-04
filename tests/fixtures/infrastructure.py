@@ -73,6 +73,7 @@ def clear_database(engine):
         "task_executions",
         "workflow_executions",
         "workflow_definitions",
+        "chronological_trigger_state",
     ]
 
     with engine.begin() as conn:
