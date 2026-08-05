@@ -51,3 +51,4 @@ exclude_also = [
 [project.scripts]
 automation-worker = "automation_platform.runtime.worker.bootstrap:run_worker"
 automation-reconciler = "automation_platform.runtime.reconciler.bootstrap:run_reconciler"
+automation-scheduler = "automation_platform.runtime.scheduler.bootstrap:run_scheduler"

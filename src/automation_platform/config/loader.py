@@ -18,12 +18,14 @@ def load_settings() -> Settings:
     queue_lease_timeout = _get_float("QUEUE_LEASE_TIMEOUT_SECONDS", default=30.0)
     worker_poll_interval = _get_float("WORKER_POLL_INTERVAL_SECONDS", default=1.0)
     worker_heartbeat_interval = _get_float("WORKER_HEARTBEAT_INTERVAL_SECONDS", default=10.0)
+    scheduler_poll_interval = _get_float("SCHEDULER_POLL_INTERVAL", default=1.0)
     reconciliation_interval = _get_float("RECONCILIATION_INTERVAL_SECONDS", default=30.0)
 
     _validate_timing(
         queue_lease_timeout,
         worker_poll_interval,
         worker_heartbeat_interval,
+        scheduler_poll_interval,
         reconciliation_interval,
     )
 
@@ -34,6 +36,7 @@ def load_settings() -> Settings:
         queue_lease_timeout=timedelta(seconds=queue_lease_timeout),
         worker_poll_interval=timedelta(seconds=worker_poll_interval),
         worker_heartbeat_interval=timedelta(seconds=worker_heartbeat_interval),
+        scheduler_poll_interval=timedelta(seconds=scheduler_poll_interval),
         reconciliation_interval=timedelta(seconds=reconciliation_interval),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )
@@ -86,6 +89,7 @@ def _validate_timing(
     queue_lease_timeout: float,
     worker_poll_interval: float,
     worker_heartbeat_interval: float,
+    scheduler_poll_interval: float,
     reconciliation_interval: float,
 ) -> None:
     """Raise an exception if configuration timings are invalid"""
@@ -99,6 +103,11 @@ def _validate_timing(
     if not worker_heartbeat_interval > 0:
         raise ValueError(
             f"worker heartbeat interval {worker_heartbeat_interval} is not greater than 0."
+        )
+
+    if not scheduler_poll_interval > 0:
+        raise ValueError(
+            f"scheduler poll interval {scheduler_poll_interval} is not greater than 0."
         )
 
     if not reconciliation_interval > 0:

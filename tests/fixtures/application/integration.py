@@ -332,3 +332,21 @@ def workflow_definition_service(
         trigger_registry=trigger_registry,
         trigger_initialization_service=trigger_initialization_service,
     )
+
+
+@pytest.fixture
+def chronological_trigger_service_factory(
+    uow_factory,
+    trigger_registry,
+    workflow_start_service,
+):
+    """Return a factory for chronological trigger application services."""
+
+    def factory() -> ChronologicalTriggerService:
+        return ChronologicalTriggerService(
+            uow_factory=uow_factory,
+            trigger_registry=trigger_registry,
+            workflow_start_service=workflow_start_service,
+        )
+
+    return factory

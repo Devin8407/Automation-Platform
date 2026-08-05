@@ -11,6 +11,9 @@ from automation_platform.application import (
     WorkflowStartService,
 )
 from automation_platform.domain import WorkflowStatus
+from automation_platform.persistence.chronological_triggers._model import (
+    ChronologicalTriggerStateModel,
+)
 
 # ==================================================================================================
 # Application Service Composition
@@ -81,6 +84,19 @@ def get_task(
     """Return a task execution by key."""
 
     return next(task for task in execution.task_executions if task.key == key)
+
+
+def load_chronological_trigger_state(
+    session_factory,
+    trigger_definition_id,
+):
+    """Load chronological trigger state using real persistence."""
+
+    with session_factory() as session:
+        return session.get(
+            ChronologicalTriggerStateModel,
+            trigger_definition_id,
+        )
 
 
 # ==================================================================================================
