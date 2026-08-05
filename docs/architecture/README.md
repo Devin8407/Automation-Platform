@@ -30,11 +30,12 @@ For someone new to the project, the recommended reading order is:
 6. [Persistence Layer](persistence.md)
 7. [Database Schema](database-schema.md)
 8. [Execution Queue](execution-queue.md)
-9. [Plugin Architecture](plugins.md)
+9. [Plugin Architecture](plugins/overview.md)
 10. [Worker Runtime](worker.md)
-11. [Reconciler Runtime](reconciler.md)
-12. [Infrastructure](infrastructure.md)
-13. [Project Structure](project-structure.md)
+11. [Scheduler Runtime](scheduler.md)
+12. [Reconciler Runtime](reconciler.md)
+13. [Infrastructure](infrastructure.md)
+14. [Project Structure](project-structure.md)
 
 The Architecture Overview is designed to stand on its own. The remaining documents provide progressively deeper explanations of individual parts of the system.
 

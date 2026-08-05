@@ -4,26 +4,24 @@
 
 The Application Layer implements the business use cases of the Automation Platform.
 
-It sits between runtime processes and the lower-level parts of the system. A runtime should be able to ask the Application Layer to perform a meaningful operation without knowing how domain objects are persisted, how plugins are resolved, or how a transaction is coordinated.
+It sits between runtime processes and the lower-level components that perform the work. A runtime should be able to ask the Application Layer to perform a meaningful operation without knowing how domain objects are persisted, how plugins are resolved, or how transactions are coordinated.
 
 The Application Layer coordinates:
 
 * Domain models
 * Persistence
 * Plugin registries and implementations
-* Application-level use cases involving the execution queue
+* Application-level interactions with the Execution Queue
 
 It does not contain transport logic, runtime loops, SQL queries, database models, or infrastructure implementations.
 
-A useful way to think about the Application Layer is:
+A useful way to think about the boundary is:
 
-> **Runtime decides when to invoke a capability. Application decides what the business operation means.**
+> **Runtime decides when to invoke a capability. Application decides what that business operation means.**
 
 ---
 
 # Architectural Role
-
-The Application Layer sits between runtime processes and the components required to perform business operations.
 
 ```mermaid
 flowchart TD
@@ -49,7 +47,7 @@ Persistence provides durable state, transactions, and database concurrency primi
 
 Plugins provide extensible task and trigger behavior.
 
-The Execution Queue remains a separate abstraction from Persistence. Application services may make work available through the queue when doing so is part of a business operation, but queue lifecycle concerns such as claims, leases, heartbeats, and worker ownership remain runtime concerns.
+The Execution Queue remains separate from Persistence. Application services may publish runnable work through the queue, but queue lifecycle concerns such as claims, leases, heartbeats, and worker ownership remain outside the Application Layer.
 
 ---
 
@@ -57,9 +55,9 @@ The Execution Queue remains a separate abstraction from Persistence. Application
 
 ## Organize Around Business Capabilities
 
-Application packages are organized around cohesive business capabilities rather than CRUD operations or individual database tables.
+Application packages are organized around meaningful business capabilities rather than CRUD operations or database tables.
 
-For example:
+Current capabilities include:
 
 ```text
 workflow_definitions
@@ -71,19 +69,21 @@ trigger_initialization
 
 A single capability may coordinate several lower-level components.
 
-This keeps orchestration in one place and prevents runtimes from needing to understand internal system behavior.
+For example, chronological trigger processing coordinates Persistence, the trigger registry, a trigger plugin, and workflow start.
+
+This keeps orchestration in one place and prevents runtimes from needing to understand internal platform behavior.
 
 ---
 
-## Thin Runtimes
+## Keep Runtimes Thin
 
 Runtime processes should contain as little business logic as possible.
 
 A runtime generally:
 
-1. Detects that some work may need to happen.
+1. Determines that work may need to happen.
 2. Invokes an Application capability.
-3. Handles process-level concerns such as polling, shutdown, or queue claim lifecycle.
+3. Handles process-level concerns such as polling, shutdown, and queue claim lifecycle.
 
 For example:
 
@@ -94,19 +94,25 @@ Scheduler Runtime
 ChronologicalTriggerService.process_next_due()
 ```
 
-The Scheduler does not query trigger repositories, resolve plugins, create workflow executions, or manipulate scheduling state itself.
+The Scheduler does not:
 
-Similarly, the worker runtime owns queue claim lifecycle but delegates logical task processing to the Application Layer.
+* Query trigger repositories.
+* Resolve trigger plugins.
+* Calculate schedule advancement.
+* Create workflow executions.
+* Manage database transactions.
+
+Similarly, the Worker owns queue claim lifecycle but delegates logical task processing to `TaskProcessingService`.
 
 ---
 
-## Transaction Boundaries
+## Application Owns Business Transactions
 
 Application services define business-level transaction boundaries through the Unit of Work.
 
-Operations that must succeed or fail together should use the same Unit of Work.
+Operations that must succeed or fail together use the same Unit of Work.
 
-For chronological scheduling, this means:
+For chronological scheduling:
 
 ```text
 advance trigger schedule
@@ -116,48 +122,72 @@ create WorkflowExecution
 one persistence transaction
 ```
 
-Long-running or arbitrary external work should not occur inside database transactions.
+The Application Layer decides that these changes form one business operation.
 
-Chronological trigger calculation is an intentional exception to the general preference for minimizing work while holding locks: `next_occurrence()` is explicitly required to be fast, deterministic, local, and I/O-free.
-
-Task plugin execution remains outside persistence transactions because task implementations may perform arbitrary or long-running work.
+Persistence provides the transaction and locking primitives needed to implement it safely.
 
 ---
 
-## Unit of Work Ownership
+## Keep Transactions Short
+
+Long-running or arbitrary external work should not occur inside database transactions.
+
+Task plugins therefore execute outside persistence transactions because they may perform arbitrary or long-running work.
+
+Chronological trigger calculation is deliberately different.
+
+```text
+ChronologicalTrigger.next_occurrence(...)
+```
+
+must be:
+
+* Fast
+* Deterministic
+* Local
+* I/O-free
+
+This makes it safe to calculate the next occurrence while the corresponding scheduling row remains locked.
+
+---
+
+## Make Unit of Work Ownership Explicit
 
 Most top-level Application capabilities create and manage their own Unit of Work.
 
-Some operations also support participating in an existing Unit of Work when another Application capability needs a larger atomic transaction.
+Nested Application operations may instead participate in an existing Unit of Work when several operations must form one transaction.
 
-Transaction ownership must remain explicit.
-
-For example, chronological trigger processing creates a Unit of Work and updates the trigger's scheduling state. It then asks `WorkflowStartService` to finish starting the workflow using that same Unit of Work.
-
-The workflow-start operation acts as the terminal operation on that transaction:
+For example:
 
 ```text
-ChronologicalTriggerService
+ChronologicalTriggerService.process_next_due()
         |
-        | existing UoW
+        | owns UoW
+        |
+        +-- update chronological state
+        |
         v
-WorkflowStartService.start_and_commit()
+WorkflowStartService.start_and_commit(...)
+        |
+        | same UoW
         |
         +-- create WorkflowExecution
         +-- create TaskExecutions
-        +-- commit supplied UoW
+        +-- commit
         +-- enqueue root tasks
 ```
 
-Once `start_and_commit()` is called, the caller must not perform additional persistence operations through that Unit of Work.
+`start_and_commit()` is intentionally a terminal operation on the supplied Unit of Work.
+
+Once it has been called, the caller should not perform additional persistence operations through that Unit of Work.
 
 ---
 
-## Infrastructure Independence
+## Remain Infrastructure-Independent
 
-Application services depend on abstractions rather than infrastructure implementations.
+Application services depend on platform abstractions rather than infrastructure implementations.
 
-They do not contain:
+Application code does not contain:
 
 * SQLAlchemy queries
 * ORM models
@@ -167,128 +197,187 @@ They do not contain:
 * Scheduler loops
 * Queue implementation details
 
-Application code may depend on the `ExecutionQueue` abstraction when making runnable work available is part of the application operation.
+Application code may depend on abstractions such as:
 
-It does not know whether that queue is implemented with PostgreSQL, an external broker, or another technology.
+```text
+UnitOfWork
+ExecutionQueue
+TaskRegistry
+TriggerRegistry
+```
+
+It does not know how those abstractions are implemented.
 
 ---
 
 # Package Organization
 
-The Application Layer is organized around implemented business capabilities.
-
 ```text
 application/
-
-    workflow_definitions/
-        __init__.py
-        models.py
-        service.py
-
-    workflow_start/
-        __init__.py
-        service.py
-
-    task_processing/
-        __init__.py
-        models.py
-        service.py
-
-    chronological_triggers/
-        __init__.py
-        service.py
-
-    trigger_initialization/
-        __init__.py
-        service.py
-
-    exceptions.py
+│
+├── workflow_definitions/
+│   ├── __init__.py
+│   ├── models.py
+│   └── service.py
+│
+├── workflow_start/
+│   ├── __init__.py
+│   └── service.py
+│
+├── task_processing/
+│   ├── __init__.py
+│   ├── models.py
+│   └── service.py
+│
+├── chronological_triggers/
+│   ├── __init__.py
+│   └── service.py
+│
+├── trigger_initialization/
+│   ├── __init__.py
+│   └── service.py
+│
+└── exceptions.py
 ```
 
 Packages should remain small until additional complexity justifies further decomposition.
 
-A package does not need a `models.py` merely because other Application packages have one. Application models should only be introduced when a real Application-level data structure is needed.
+A package does not need a `models.py` simply because other packages have one. Application models should exist only when a real Application-level data structure is required.
 
 ---
 
 # Workflow Definition Management
 
-The `workflow_definitions` package manages reusable workflow definitions.
+The `workflow_definitions` capability manages reusable workflow definitions.
 
-Its primary service is responsible for creating and deleting workflow definitions.
+Its primary service currently supports creating and deleting definitions.
 
 ## Creation
 
-Workflow definition creation accepts an Application request describing:
+Workflow definition creation accepts Application-level input describing:
 
 * Workflow metadata
 * Task definitions
 * Trigger definitions
 * Enabled state
 
-The Application Layer validates the requested definition before persistence.
+The service validates the complete definition before persistence.
 
-Validation includes:
+Task validation includes:
 
-* Registered task plugin types
-* Registered trigger plugin types
-* Plugin configuration validity
-* Unique task keys
-* Valid dependency references
-* No self-dependencies
-* No dependency cycles
+* At least one task exists.
+* Task keys are unique.
+* Task plugin types are registered.
+* Plugin configurations are valid.
+* Retry counts are valid.
+* Dependencies reference existing tasks.
+* Tasks do not depend on themselves.
+* Dependencies are not duplicated.
+* The dependency graph contains no cycles.
 
-Trigger configuration validation remains part of workflow definition creation.
+Trigger validation includes:
 
-For each trigger definition, the service resolves its plugin and invokes:
+* Trigger plugin types are registered.
+* Plugin configurations are valid.
+
+Plugin-specific validation remains the responsibility of the plugin:
 
 ```text
 plugin.validate_configuration(configuration)
 ```
 
+Workflow definition creation invokes that behavior and translates plugin validation failures into the appropriate Application error.
+
 Validation answers:
 
-> **Is this a valid definition for this plugin?**
+> **Is this a valid workflow definition?**
 
-It is separate from mechanism-specific initialization.
+It is separate from initializing any runtime state that a trigger mechanism may require.
 
-After the definition has been persisted into the current Unit of Work, trigger initialization is dispatched using the already-resolved trigger plugin.
+---
+
+## Trigger Resolution During Creation
+
+Trigger plugins are resolved during validation.
+
+The resolved plugin remains associated with the `TriggerDefinition` created from that input so initialization does not need to perform another registry lookup.
+
+Conceptually:
 
 ```text
-WorkflowDefinitionService
+CreateTriggerDefinition
         |
-        +-- resolve trigger plugin
+        +-- resolve plugin
         |
         +-- validate configuration
         |
-        +-- persist WorkflowDefinition
-        |
-        +-- TriggerInitializationService
-                |
-                +-- mechanism-specific initialization
+        v
+TriggerDefinition + resolved plugin
 ```
 
-The complete operation uses the workflow-definition creation Unit of Work.
+This association is then used during trigger initialization.
 
-Therefore definition creation and any required trigger runtime-state initialization are atomic.
+---
+
+## Persistence and Initialization
+
+After validation and domain-object construction, workflow definition creation performs:
+
+```text
+BEGIN UoW
+    |
+    +-- save WorkflowDefinition
+    |       |
+    |       +-- TaskDefinitions
+    |       +-- TriggerDefinitions
+    |
+    +-- flush
+    |
+    +-- initialize trigger runtime state
+    |
+    +-- commit
+```
+
+The flush makes persisted trigger definitions available for foreign-key references without committing the transaction.
+
+Trigger initialization still participates in the same transaction.
+
+Therefore:
+
+```text
+WorkflowDefinition
+TriggerDefinitions
+required trigger runtime state
+```
+
+either all persist or all roll back.
 
 ---
 
 # Trigger Initialization
 
-Different trigger mechanisms may require different durable state when their definitions are created.
+Different trigger mechanisms may require different state when their definitions are created.
 
-`TriggerInitializationService` provides the Application-level dispatch point for this initialization.
+`TriggerInitializationService` provides the Application-level dispatch point for that behavior.
 
 It receives:
 
-* The resolved trigger plugin class
-* The persisted `TriggerDefinition`
-* The existing Unit of Work
+* The already-resolved trigger plugin class.
+* Its `TriggerDefinition`.
+* The existing Unit of Work.
 
-It does not resolve the plugin a second time and does not commit the transaction.
+It does not:
 
-Dispatch is based on trigger mechanism interfaces rather than individual plugin names.
+* Resolve the plugin again.
+* Validate its configuration again.
+* Open another Unit of Work.
+* Commit the transaction.
+
+---
+
+## Mechanism-Based Dispatch
+
+Initialization is dispatched according to trigger mechanism interfaces rather than individual plugin names.
 
 For example:
 
@@ -303,28 +392,58 @@ ChronologicalTrigger
 ChronologicalTriggerService.initialize()
 ```
 
-This means future plugins such as `CronTrigger` or `DailyTimeTrigger` can use the existing chronological initialization infrastructure simply by implementing `ChronologicalTrigger`.
+Conceptually, the dispatcher maps a supported mechanism interface to its initialization capability:
 
-A valid trigger mechanism that requires no initialization is simply ignored by the initialization dispatcher.
+```text
+ChronologicalTrigger
+        ->
+ChronologicalTriggerService.initialize
+```
 
-No artificial "no initialization" mechanism is required.
+This means another chronological plugin can use the same initialization infrastructure automatically:
+
+```text
+CronTrigger
+        |
+        +-- inherits ChronologicalTrigger
+        |
+        +-- automatically uses chronological initialization
+```
+
+The dispatcher does not contain entries for individual chronological plugins such as `interval`, `cron`, or `daily`.
 
 ---
 
-# Chronological Triggers
+## Mechanisms Without Initialization
+
+Not every trigger mechanism needs durable initialization.
+
+If a valid trigger plugin does not match a mechanism requiring initialization, the dispatcher simply performs no operation.
+
+There is no artificial:
+
+```text
+NoInitializationTrigger
+```
+
+and no trigger-mechanism enum representing this case.
+
+---
+
+# Chronological Trigger Capability
 
 The `chronological_triggers` package owns the Application behavior required to activate workflows according to time.
 
-A chronological trigger plugin defines how its own schedule behaves.
-
-The Application service defines how the platform hosts that behavior.
-
-The primary operations are:
+It exposes two operations:
 
 ```text
 initialize()
 process_next_due()
 ```
+
+The chronological plugin defines schedule-specific behavior.
+
+The Application service defines how the platform hosts that behavior.
 
 ---
 
@@ -332,7 +451,13 @@ process_next_due()
 
 Chronological initialization occurs during workflow definition creation.
 
-The service receives an already-validated chronological trigger definition and calculates its first scheduled occurrence:
+The service receives:
+
+* A resolved `ChronologicalTrigger` implementation.
+* Its `TriggerDefinition`.
+* The caller's Unit of Work.
+
+It calculates the first scheduled occurrence:
 
 ```text
 TriggerDefinition.configuration
@@ -344,24 +469,30 @@ ChronologicalTrigger.next_occurrence()
 first next_run_at
         |
         v
-chronological trigger persistence
+ChronologicalTriggerRepository.create()
 ```
 
-The service uses the Unit of Work supplied by workflow definition creation.
+The service uses the current UTC time as the point after which the first occurrence is calculated.
 
-It does not create or commit its own transaction.
+If the plugin returns `None`, no chronological runtime state is required.
 
-This establishes an important invariant:
+Otherwise, the calculated occurrence is persisted.
 
-> **A successfully created chronological trigger definition also has the durable scheduling state required to execute it.**
+The service does not commit.
 
-If initialization fails, the surrounding workflow-definition transaction rolls back.
+This establishes the invariant:
+
+> **A successfully created chronological trigger definition has the durable scheduling state required to execute it.**
+
+If initialization fails, the entire workflow-definition creation transaction rolls back.
 
 ---
 
-## Processing Due Triggers
+# Processing Chronological Triggers
 
-`process_next_due()` processes at most one scheduled occurrence per call.
+`process_next_due()` is the runtime-facing chronological scheduling capability.
+
+Each invocation processes at most one due occurrence.
 
 Conceptually:
 
@@ -370,13 +501,13 @@ BEGIN UoW
     |
     +-- get earliest due chronological trigger
     |       |
-    |       +-- row locked by Persistence
+    |       +-- Persistence locks scheduling row
     |
     +-- resolve trigger plugin
     |
     +-- calculate next occurrence
     |
-    +-- update next_run_at
+    +-- update or delete scheduling state
     |
     +-- WorkflowStartService.start_and_commit()
             |
@@ -386,35 +517,98 @@ BEGIN UoW
             +-- enqueue root tasks
 ```
 
-If no trigger is currently due, the service returns without starting a workflow.
+The operation returns:
 
-Processing only one occurrence per call keeps transactions short and allows multiple Scheduler processes to naturally divide available work.
+```text
+True
+    one occurrence was processed
+
+False
+    no chronological occurrence is currently due
+```
+
+Processing one occurrence per call keeps transactions short and allows the Scheduler runtime to naturally drain available work.
 
 ---
 
-## Catch-Up Behavior
+## Resolving the Trigger
 
-Recurring chronological triggers advance relative to their persisted scheduled occurrence rather than directly from the current wall-clock time.
-
-For example:
+Persistence returns the information required to process the due occurrence, including:
 
 ```text
-interval:        1 hour
-next_run_at:     09:00
-current time:    11:30
+trigger definition ID
+workflow definition ID
+plugin type
+configuration
+scheduled occurrence
 ```
 
-Processing the 09:00 occurrence advances the schedule to:
+The Application service resolves the plugin through `TriggerRegistry`.
+
+The plugin is expected to implement `ChronologicalTrigger` because chronological runtime state is created only for chronological trigger definitions.
+
+The service then invokes:
 
 ```text
-10:00
+next_occurrence(
+    configuration,
+    persisted_next_run_at,
+)
 ```
 
-not 12:00.
+The persisted scheduled occurrence is deliberately used rather than the current wall-clock time.
 
-Because 10:00 is still due, another call can process that occurrence.
+---
 
-Repeated calls therefore produce:
+## Advancing the Schedule
+
+If the plugin returns another occurrence:
+
+```text
+next_occurrence(...) -> datetime
+```
+
+the chronological state is advanced to that value.
+
+If it returns:
+
+```text
+None
+```
+
+the chronological runtime state is deleted.
+
+The reusable `TriggerDefinition` remains persisted.
+
+This allows finite chronological plugins, such as a future one-time trigger, to finish without deleting their definitions.
+
+---
+
+# Catch-Up Behavior
+
+Recurring chronological triggers advance relative to their persisted scheduled occurrence.
+
+Suppose:
+
+```text
+interval:      1 hour
+next_run_at:   09:00
+current time:  11:30
+```
+
+Processing the 09:00 occurrence calculates:
+
+```text
+09:00 -> 10:00
+```
+
+not:
+
+```text
+09:00 -> 12:00
+```
+
+Because 10:00 remains due, the Scheduler can immediately process another occurrence:
 
 ```text
 09:00 -> 10:00
@@ -422,75 +616,207 @@ Repeated calls therefore produce:
 11:00 -> 12:00
 ```
 
-This provides deterministic catch-up behavior.
+At 12:00, the schedule is finally ahead of the current time.
 
-Alternative missed-run policies may be introduced later if requirements justify them.
+This provides deterministic catch-up behavior and prevents missed occurrences from being silently skipped.
+
+Alternative missed-run policies can be introduced later if concrete requirements justify them.
+
+---
+
+# Scheduling Concurrency
+
+Chronological scheduling supports multiple Scheduler processes.
+
+Persistence selects due chronological state using PostgreSQL:
+
+```sql
+FOR UPDATE SKIP LOCKED
+```
+
+Application does not implement this SQL or manipulate the row lock directly.
+
+From the Application Layer's perspective:
+
+```text
+Scheduler A
+        |
+        +-- process_next_due()
+                |
+                +-- receives Trigger A
+
+Scheduler B
+        |
+        +-- process_next_due()
+                |
+                +-- receives Trigger B
+```
+
+Persistence ensures that the second transaction skips state already locked by the first.
+
+The Application Layer can therefore process the returned occurrence without introducing its own scheduler-claim mechanism.
+
+---
+
+## Atomic Scheduling
+
+The scheduling row remains locked while the Application Layer:
+
+1. Resolves the trigger plugin.
+2. Calculates the next occurrence.
+3. Advances or removes scheduling state.
+4. Creates the workflow execution.
+5. Commits the transaction.
+
+The central guarantee is:
+
+> **Schedule advancement and WorkflowExecution creation are committed atomically for a chronological occurrence.**
+
+The system cannot commit:
+
+```text
+schedule advanced
+but
+WorkflowExecution missing
+```
+
+or:
+
+```text
+WorkflowExecution created
+but
+schedule not advanced
+```
+
+for that persistence transaction.
+
+---
+
+## Failure Behavior
+
+The shared transaction gives chronological processing straightforward failure semantics.
+
+### Trigger calculation fails
+
+```text
+lock occurrence
+        |
+        v
+next_occurrence() raises
+        |
+        v
+transaction rolls back
+        |
+        v
+occurrence remains due
+```
+
+### Workflow start fails
+
+```text
+lock occurrence
+        |
+        v
+advance schedule
+        |
+        v
+workflow creation fails
+        |
+        v
+transaction rolls back
+        |
+        v
+schedule advancement is undone
+```
+
+### Scheduler crashes before commit
+
+```text
+transaction terminates
+        |
+        v
+PostgreSQL rolls back
+        |
+        v
+row lock released
+        |
+        v
+occurrence remains due
+```
+
+No Scheduler lease, heartbeat, claim token, or global lock is required.
+
+Those mechanisms are appropriate for long-running task execution, not short scheduling transactions.
 
 ---
 
 # Workflow Start
 
-The `workflow_start` package owns what it means to start a workflow execution.
+The `workflow_start` capability owns what it means to start a workflow.
 
 Starting a workflow includes:
 
 1. Loading the workflow definition.
 2. Verifying that it exists.
 3. Verifying that it is enabled.
-4. Creating a new `WorkflowExecution`.
-5. Creating a `TaskExecution` for every task definition.
-6. Reconstructing execution dependencies.
-7. Initializing dependency and retry state.
+4. Creating a `WorkflowExecution`.
+5. Creating a `TaskExecution` for each task definition.
+6. Translating definition dependencies into execution dependencies.
+7. Initializing dependency counts and retry state.
 8. Identifying root tasks.
-9. Persisting the complete execution.
+9. Persisting the execution.
 10. Committing the transaction.
-11. Enqueueing the initially runnable root tasks.
+11. Enqueueing the root tasks.
 
-Each execution receives its own task-execution graph so runtime state remains independent of the reusable definition.
+Each workflow execution receives its own task-execution graph so runtime state remains independent of the reusable definition.
 
 ---
 
-## Starting With a New Transaction
+## Normal Workflow Start
 
-The normal public workflow-start operation is:
+The normal public operation is:
 
 ```text
 start(workflow_definition_id)
 ```
 
-It creates its own Unit of Work and performs the complete workflow-start operation.
-
-Conceptually:
+It owns its Unit of Work:
 
 ```text
 start()
     |
     +-- create UoW
     |
+    +-- load and validate definition
+    |
     +-- create execution state
+    |
+    +-- persist
     |
     +-- commit
     |
     +-- enqueue root tasks
 ```
 
+This is appropriate for callers that do not already have persistence changes that must commit with workflow creation.
+
 ---
 
-## Starting Within an Existing Transaction
+## Workflow Start Within an Existing Transaction
 
-Some Application operations need workflow creation to participate in a larger transaction.
+Some Application capabilities need workflow creation to complete a larger transaction.
 
 Chronological scheduling is the first example.
 
-For these cases, workflow start also provides:
+For this purpose, workflow start also exposes:
 
 ```text
 start_and_commit(workflow_definition_id, uow)
 ```
 
-The supplied Unit of Work may already contain persistence changes made by the caller.
+The supplied Unit of Work may already contain persistence changes.
 
-`start_and_commit()`:
+`start_and_commit()` then:
 
 ```text
 existing UoW
@@ -504,97 +830,172 @@ existing UoW
     +-- enqueue root tasks
 ```
 
-The commit therefore includes both the caller's previous persistence changes and the newly created workflow execution.
-
-For chronological scheduling, this gives:
+For chronological scheduling, the commit therefore contains:
 
 ```text
-next_run_at advanced
+schedule advancement
         +
-WorkflowExecution created
-        =
-same commit
+WorkflowExecution creation
 ```
 
-`start_and_commit()` is intentionally a terminal operation on the supplied Unit of Work.
+`start_and_commit()` is a terminal operation on the supplied Unit of Work.
+
+This keeps workflow-start business logic centralized rather than duplicating execution compilation inside every capability that can start a workflow.
 
 ---
 
-## Queue Boundary During Workflow Start
+# Queue Boundary During Workflow Start
 
-Workflow start owns enqueueing the initially runnable tasks.
+`WorkflowStartService` owns publication of initially runnable tasks.
 
-This prevents every trigger mechanism or other workflow-starting capability from needing to understand how a workflow becomes available to workers.
+This means callers such as chronological scheduling do not need to know how newly created workflows become available to Workers.
 
-The queue operation occurs only after the persistence transaction has committed.
-
-The Unit of Work's SQLAlchemy session may still exist until its context manager exits, but the database transaction and its locks end at `commit()`.
-
-Therefore:
+The ordering is:
 
 ```text
+persist execution
+        |
+        v
 COMMIT
-    |
-    +-- persistence durable
-    +-- database locks released
-    |
-    v
+        |
+        +-- persistence durable
+        +-- database locks released
+        |
+        v
 enqueue root tasks
 ```
 
-is a valid ordering.
+The SQLAlchemy session may remain alive until the Unit of Work context exits, but the transaction and its database locks end at commit.
 
 Persistence and the Execution Queue remain separate transactional systems.
 
-A process failure between database commit and queue enqueue can therefore leave persisted runnable work temporarily absent from the queue.
+A process failure can therefore occur between:
 
-This is an intentional architectural boundary. Recovery relies on reconciliation and idempotent enqueueing rather than coupling queue storage to the persistence transaction.
+```text
+database commit
+        |
+        X process failure
+        |
+queue enqueue
+```
+
+leaving runnable persisted work temporarily absent from the queue.
+
+This is an intentional architectural boundary.
+
+Recovery relies on reconciliation and idempotent enqueueing rather than coupling queue storage to the Persistence transaction.
 
 ---
 
-# Chronological Scheduling Concurrency
+# Task Processing
 
-Chronological scheduling is designed to support multiple Scheduler processes.
+The `task_processing` capability owns the logical processing of a task execution after a Worker has obtained it from the Execution Queue.
 
-Persistence selects the earliest due chronological trigger using PostgreSQL row locking with `FOR UPDATE SKIP LOCKED`.
+The Worker owns queue claim lifecycle.
+
+The Application service owns the task's business transition.
 
 Conceptually:
 
 ```text
-Scheduler A
+Worker
     |
-    +-- locks Trigger A
-
-Scheduler B
+    +-- claim queue item
     |
-    +-- skips locked Trigger A
-    +-- locks Trigger B
-
-Scheduler C
+    v
+TaskProcessingService.process(task_execution_id)
     |
-    +-- skips A and B
-    +-- locks Trigger C
+    +-- start/resume task in Persistence
+    +-- resolve task plugin
+    +-- construct TaskContext
+    +-- execute plugin
+    +-- persist success or failure
+    |
+    v
+Processing result
+    |
+    v
+Worker
+    |
+    +-- finish/release queue claim
 ```
 
-The lock is held for the scheduling transaction.
+Task plugin execution occurs outside the database transaction because plugins may perform arbitrary or long-running work.
 
-While the row is locked, the Application Layer:
+---
 
-1. Resolves the chronological trigger plugin.
-2. Calculates the next occurrence.
-3. Updates the persisted schedule.
-4. Creates the workflow execution.
-5. Commits the transaction.
+## Starting or Resuming a Task
 
-The commit releases the row lock.
+The service asks Persistence whether the task can be processed.
 
-This provides the central scheduling guarantee:
+A logical task may be processable when it is:
 
-> **A chronological occurrence cannot be concurrently committed by multiple schedulers, and schedule advancement is atomic with creation of its WorkflowExecution.**
+```text
+PENDING
+```
 
-No scheduler lease, heartbeat, claim token, or global scheduler lock is required.
+or already:
 
-If the Scheduler crashes before commit, PostgreSQL rolls back the transaction and releases the row lock. The occurrence remains due and can be processed by another Scheduler.
+```text
+RUNNING
+```
+
+Allowing `RUNNING` tasks to resume supports recovery after queue lease expiration or redelivery.
+
+Terminal tasks are not processed again.
+
+---
+
+## Task Plugin Execution
+
+Once Persistence returns the data required for execution, Application:
+
+1. Resolves the task plugin.
+2. Constructs the plugin's `TaskContext`.
+3. Invokes the plugin.
+4. Interprets the resulting `TaskResult`.
+
+Plugins do not receive repositories, database sessions, or queue implementations.
+
+---
+
+## Successful Completion
+
+When a task succeeds, the service asks Persistence to complete it.
+
+Persistence returns any child task identifiers that became runnable because of that completion.
+
+Those identifiers are returned to the Worker/runtime path for queue publication according to the existing execution architecture.
+
+---
+
+## Retryable Failure
+
+A plugin failure does not necessarily mean the logical task has failed permanently.
+
+If tries remain:
+
+```text
+RUNNING
+    |
+    +-- record failed attempt
+    +-- decrement remaining tries
+    |
+    v
+RUNNING
+```
+
+The task remains unresolved and can be retried.
+
+---
+
+## Terminal Failure
+
+If no tries remain, the task becomes `FAILED`.
+
+The workflow then fails and its remaining nonterminal tasks are cancelled through Persistence.
+
+The Application service coordinates this business outcome while Persistence implements the atomic database transitions.
 
 ---
 
@@ -602,11 +1003,7 @@ If the Scheduler crashes before commit, PostgreSQL rolls back the transaction an
 
 Triggers determine **when a workflow should start**.
 
-Different families of triggers may require fundamentally different infrastructure.
-
-These families are represented through trigger mechanism interfaces.
-
-For example:
+Different trigger families may require fundamentally different platform infrastructure, so trigger mechanisms are represented through interfaces.
 
 ```text
 Trigger
@@ -616,6 +1013,7 @@ Trigger
     |       +-- IntervalTrigger
     |       +-- CronTrigger          [future]
     |       +-- DailyTimeTrigger     [future]
+    |       +-- OneTimeTrigger       [future]
     |
     +-- WebhookTrigger               [future]
     +-- FilesystemTrigger            [future]
@@ -623,23 +1021,23 @@ Trigger
 
 The class hierarchy itself identifies the mechanism.
 
-There is no separate trigger-mechanism enum or persisted mechanism field.
+There is no separate trigger-mechanism enum or persisted mechanism category.
 
-For example, because:
+For example:
 
 ```text
-IntervalTrigger is a ChronologicalTrigger
+IntervalTrigger
+        is a
+ChronologicalTrigger
 ```
 
-the Application Layer knows that it should use chronological initialization and scheduling infrastructure.
+is sufficient for the Application Layer to know that the plugin uses chronological initialization and scheduling infrastructure.
 
 ---
 
 ## Trigger Plugin Responsibilities
 
-Trigger plugins own only trigger-specific behavior.
-
-All trigger plugins validate their configuration.
+Every trigger plugin validates its own configuration.
 
 A chronological trigger additionally implements:
 
@@ -647,28 +1045,24 @@ A chronological trigger additionally implements:
 next_occurrence(configuration, after)
 ```
 
-This operation must be:
+Trigger plugins own trigger-specific behavior only.
 
-* Fast
-* Deterministic
-* Local
-* I/O-free
-* Independent of Persistence and runtime infrastructure
+They do not:
 
-Trigger plugins do not:
+* Open database sessions.
+* Access repositories.
+* Create workflow executions.
+* Enqueue tasks.
+* Commit transactions.
+* Control runtime processes.
 
-* Open database sessions
-* Access repositories
-* Create workflow executions
-* Enqueue tasks
-* Commit transactions
-* Control runtime processes
+Chronological `next_occurrence()` implementations must remain fast, deterministic, local, and I/O-free because the Application Layer may invoke them while scheduling state is locked.
 
 ---
 
-## Adding New Trigger Plugins
+## Adding a Chronological Plugin
 
-Adding another chronological plugin should require only implementing the chronological trigger contract.
+Adding another chronological trigger should require implementing the existing chronological contract.
 
 For example:
 
@@ -679,7 +1073,7 @@ CronTrigger
     +-- next_occurrence()
 ```
 
-Because it inherits `ChronologicalTrigger`, it automatically participates in the existing:
+Because `CronTrigger` inherits `ChronologicalTrigger`, it automatically participates in:
 
 ```text
 TriggerInitializationService
@@ -689,71 +1083,37 @@ ChronologicalTriggerService
 Scheduler Runtime
 ```
 
-No Scheduler, Persistence, or Application orchestration changes should be necessary.
-
-A completely new trigger mechanism may legitimately require new Application and runtime infrastructure.
-
-For example, a webhook trigger may require an HTTP-facing runtime rather than chronological polling.
-
-That does not violate the plugin architecture. Plugin extensibility applies within the infrastructure provided for a supported mechanism.
+No Scheduler, Persistence, or Application orchestration changes should be required.
 
 ---
 
-# Scheduler Runtime Interaction
+## Adding a New Trigger Mechanism
 
-The Scheduler runtime is intentionally thin.
+A fundamentally different trigger mechanism may require new platform infrastructure.
 
-Conceptually:
-
-```text
-while running:
-    processed = chronological_trigger_service.process_next_due()
-
-    if not processed:
-        sleep(poll_interval)
-```
-
-The Scheduler does not know about:
+For example, a webhook trigger may require:
 
 ```text
-TriggerDefinition
-ChronologicalTriggerState
-TriggerRegistry
-UnitOfWork
-Repositories
-WorkflowExecution
+WebhookTrigger
+        +
+Webhook Application capability
+        +
+HTTP-facing runtime
 ```
 
-It simply asks the Application Layer to process one available chronological occurrence.
+rather than chronological polling.
 
-Multiple Scheduler processes may run concurrently because Persistence handles due-trigger claiming through PostgreSQL row locks.
+That does not violate the plugin architecture.
 
-```mermaid
-flowchart TD
+Plugin extensibility means implementations belonging to an already-supported mechanism can be added without changing that mechanism's hosting infrastructure.
 
-    SchedulerA["Scheduler A"]
-    SchedulerB["Scheduler B"]
-    SchedulerC["Scheduler C"]
-
-    Chronological["Chronological Trigger Service"]
-    Persistence["Persistence"]
-    Start["Workflow Start Service"]
-
-    SchedulerA --> Chronological
-    SchedulerB --> Chronological
-    SchedulerC --> Chronological
-
-    Chronological --> Persistence
-    Chronological --> Start
-```
+It does not require every possible trigger mechanism to share one artificial runtime contract.
 
 ---
 
 # Runtime Interaction
 
 Runtime processes consume narrowly scoped Application capabilities.
-
-Conceptually:
 
 ```mermaid
 flowchart TD
@@ -777,13 +1137,56 @@ flowchart TD
     Chronological --> Start
 ```
 
-The Scheduler invokes the chronological scheduling capability rather than directly invoking workflow start.
+The Scheduler invokes chronological scheduling rather than workflow start directly because scheduled activation involves more than creating an execution.
 
-This is important because chronological scheduling involves more than simply starting a workflow: it must atomically claim and advance a scheduled occurrence.
+It must first safely process and advance a persisted occurrence.
 
-A runtime only receives the Application dependencies required for the operations it performs.
+The Worker invokes task processing rather than manipulating task execution state itself.
+
+A runtime only receives the Application dependencies required for its responsibilities.
 
 There is no requirement for a single global `Application` object.
+
+---
+
+# Scheduler Interaction
+
+The Scheduler runtime is deliberately small.
+
+Conceptually:
+
+```text
+while running:
+
+    processed =
+        chronological_trigger_service.process_next_due()
+
+    if processed:
+        immediately check again
+
+    else:
+        wait poll_interval
+```
+
+The Scheduler therefore drains currently due work without sleeping between successful occurrences.
+
+It waits only when no chronological occurrence is available.
+
+The Scheduler does not know about:
+
+```text
+TriggerDefinition
+ChronologicalTriggerState
+TriggerRegistry
+UnitOfWork
+Repositories
+WorkflowExecution
+PostgreSQL row locks
+```
+
+Those concerns remain behind the Application and Persistence boundaries.
+
+Multiple Scheduler processes may run concurrently because Persistence safely distributes due occurrences using row locking.
 
 ---
 
@@ -820,102 +1223,134 @@ Plugins should not know about Persistence, workflow orchestration, or queueing.
 
 The Application Layer should not contain:
 
-* HTTP request or response handling
-* FastAPI routes
-* Worker polling loops
-* Scheduler polling loops
-* Queue claim ownership
-* Queue heartbeats
-* Queue lease management
-* SQLAlchemy models
-* SQL queries
-* Database sessions
-* Queue implementations
-* Task implementation logic
-* Trigger-specific runtime loops
+* HTTP request or response handling.
+* FastAPI routes.
+* Worker polling loops.
+* Scheduler polling loops.
+* Queue claim ownership.
+* Queue heartbeats.
+* Queue lease management.
+* SQLAlchemy models.
+* SQL queries.
+* Database sessions.
+* Queue implementations.
+* Task implementation logic.
+* Trigger-specific runtime loops.
 
-Application services may coordinate abstractions such as `UnitOfWork`, plugin registries, and `ExecutionQueue`, but implementation-specific behavior remains in the corresponding lower-level component.
+Application services may coordinate abstractions such as `UnitOfWork`, plugin registries, and `ExecutionQueue`, but implementation-specific behavior remains in the appropriate lower-level component.
 
 ---
 
 # Testing Strategy
 
-Application services should primarily be unit tested with mocked external dependencies.
+Application tests should focus on orchestration and business behavior rather than SQL implementation details.
 
-Tests should verify orchestration rather than SQL implementation details.
+## Workflow Definition Tests
 
-Important chronological-trigger Application tests include:
+Important scenarios include:
+
+* Invalid task definitions are rejected.
+* Invalid trigger definitions are rejected.
+* Plugin configuration validation is invoked.
+* Dependency cycles are rejected.
+* Trigger initialization uses the same Unit of Work as definition creation.
+* Initialization failure prevents definition creation from committing.
+
+---
+
+## Chronological Trigger Tests
+
+Important Application-level scenarios include:
 
 * Initialization calculates and persists the first occurrence.
 * Initialization uses the caller's Unit of Work.
-* Initialization does not commit the workflow-definition transaction.
+* Initialization does not commit.
 * Non-chronological triggers do not create chronological state.
 * A due trigger resolves the correct plugin.
 * `next_occurrence()` receives the persisted scheduled occurrence.
-* Schedule advancement occurs before workflow start is finalized.
-* No due trigger results in a no-op.
-* Plugin calculation failure leaves the transaction uncommitted.
-* Workflow-start failure leaves schedule advancement uncommitted.
-* Successful processing advances the schedule and creates an execution in one transaction.
+* A future occurrence advances scheduling state.
+* `None` removes completed chronological state.
+* No due trigger returns without starting a workflow.
+* Plugin calculation failure prevents the transaction from committing.
+* Workflow-start failure prevents schedule advancement from committing.
+* Successful processing advances the schedule and creates an execution atomically.
+* Overdue recurring triggers follow deterministic catch-up behavior.
 
-Cross-component PostgreSQL integration tests should verify the concurrency guarantees that cannot be meaningfully proven with mocks.
+PostgreSQL-specific locking behavior belongs primarily to Persistence integration testing.
 
-Important scheduling integration scenarios include:
-
-```text
-one due trigger
-+
-two concurrent schedulers
-=
-exactly one committed WorkflowExecution
-```
-
-and:
+Cross-layer integration tests should still verify the resulting scheduling guarantee:
 
 ```text
-multiple due triggers
-+
-multiple schedulers
-=
-different due rows can be processed concurrently
+one due occurrence
+        +
+concurrent Scheduler processing
+        =
+one committed WorkflowExecution for that occurrence
 ```
 
-Catch-up behavior should also be tested using an overdue recurring trigger.
+---
+
+## Workflow Start Tests
+
+Important scenarios include:
+
+* A valid definition produces a complete execution graph.
+* Disabled definitions cannot be started.
+* Missing definitions cannot be started.
+* Root tasks are identified correctly.
+* `start()` owns and commits its transaction.
+* `start_and_commit()` participates in and commits the supplied transaction.
+* Root tasks are published only after persistence commits.
+
+---
+
+## Task Processing Tests
+
+Important scenarios include:
+
+* Pending tasks can begin processing.
+* Running tasks can resume after redelivery.
+* Terminal tasks are not processed again.
+* Parent outputs reach dependent task plugins.
+* Successful completion advances dependencies.
+* Retryable failures remain unresolved.
+* Terminal failures fail the workflow.
+* Remaining tasks are cancelled after terminal workflow failure.
 
 ---
 
 # Future Evolution
 
-The Application Layer should remain organized around meaningful business capabilities as the platform grows.
+The Application Layer should continue to be organized around meaningful business capabilities as the platform grows.
 
 Potential future capabilities include:
 
-* Workflow cancellation
-* Workflow definition updates
-* Workflow versioning
-* Pause and resume
-* Explicit execution retry
-* Administrative recovery
-* Execution inspection
-* Additional trigger mechanisms
-* Additional chronological trigger plugins
-* Configurable missed-run policies
+* Workflow cancellation.
+* Workflow definition updates.
+* Workflow versioning.
+* Pause and resume.
+* Explicit execution retry.
+* Administrative recovery.
+* Execution inspection.
+* Additional trigger mechanisms.
+* Additional chronological trigger plugins.
+* Configurable missed-run policies.
 
-New packages and abstractions should be introduced when an actual capability requires them rather than preemptively modeling possible future behavior.
+New packages and abstractions should be introduced when a concrete capability requires them rather than preemptively modeling possible future behavior.
 
-For chronological scheduling specifically, the initial architecture intentionally does **not** introduce:
+For chronological scheduling, the current architecture intentionally does not introduce:
 
-* Scheduler leases
-* Scheduler heartbeats
-* Scheduler claim tokens
-* Trigger-mechanism enums
-* Persisted mechanism categories
-* Generic trigger runtime-state frameworks
-* Batch scheduling
-* Distributed locks
-* A separate scheduling queue
-* Scheduling-specific outbox infrastructure
+* Scheduler leases.
+* Scheduler heartbeats.
+* Scheduler claim tokens.
+* Trigger-mechanism enums.
+* Persisted mechanism categories.
+* Generic trigger runtime-state frameworks.
+* Batch scheduling.
+* Distributed locks.
+* A separate scheduling queue.
+* Scheduling-specific outbox infrastructure.
 
-The initial implementation relies on a simpler model:
+The current division of responsibility is deliberately simple:
 
-> **Chronological plugins calculate time. Application orchestrates scheduling. Persistence owns durable state and row locking. Workflow start owns execution creation and initial queue publication. Runtime only drives the Application capability.**
+> **Plugins define mechanism-specific behavior. Application orchestrates business operations. Persistence owns durable state and database concurrency. Workflow start owns execution creation and initial queue publication. Runtime drives the appropriate Application capability.**

@@ -10,7 +10,7 @@ Persistence exposes repositories and transactional operations that work with dom
 
 The Persistence Layer answers the question:
 
-> **"How is application state stored, retrieved, and transitioned safely?"**
+> **How is application state stored, retrieved, and transitioned safely?**
 
 ---
 
@@ -20,9 +20,11 @@ The Persistence Layer is responsible for:
 
 * Persisting workflow definitions.
 * Persisting workflow executions.
+* Persisting chronological trigger scheduling state.
 * Reconstructing domain objects from stored data.
-* Providing targeted persistence operations needed by application use cases.
+* Providing targeted persistence operations needed by Application use cases.
 * Performing concurrency-sensitive state transitions.
+* Providing database locking required by Application operations.
 * Maintaining execution dependency state.
 * Managing database sessions.
 * Defining transactional boundaries through the Unit of Work.
@@ -33,26 +35,30 @@ The Persistence Layer is not responsible for:
 
 * Workflow orchestration.
 * Task plugin execution.
+* Trigger plugin execution.
+* Calculating trigger occurrences.
 * Constructing `TaskContext`.
 * Interpreting `TaskResult`.
 * Queue claims or leases.
 * Queue heartbeats.
 * Worker lifecycle.
-* Trigger evaluation.
-* Scheduling.
+* Scheduler lifecycle.
+* Scheduler polling.
 * HTTP handling.
+
+Persistence provides the durable state and concurrency primitives required by these systems without implementing their business behavior.
 
 ---
 
 # Design Principles
-
-The Persistence Layer follows several architectural principles.
 
 ## Infrastructure Encapsulation
 
 SQLAlchemy models, database sessions, SQL expressions, and PostgreSQL-specific behavior remain internal to Persistence.
 
 Other layers interact with persistence abstractions rather than database implementation details.
+
+For example, Application code can ask Persistence for the next due chronological trigger without knowing that PostgreSQL uses `FOR UPDATE SKIP LOCKED` to safely select it.
 
 ---
 
@@ -62,6 +68,10 @@ Domain models remain independent of SQLAlchemy.
 
 Persistence translates between domain representations and database representations rather than attaching persistence behavior directly to domain objects.
 
+Not every persisted table requires a corresponding Domain object.
+
+For example, chronological trigger scheduling state exists to support durable scheduling and is used primarily by Persistence and Application. It therefore does not need to become part of the core workflow Domain.
+
 ---
 
 ## Aggregate Persistence
@@ -70,40 +80,61 @@ Repositories own persistence for major aggregate roots.
 
 Workflow definitions contain:
 
-* Task Definitions
-* Trigger Definitions
+* Task Definitions.
+* Trigger Definitions.
 
 Workflow executions contain:
 
-* Task Executions
+* Task Executions.
 
-Repositories may persist and reconstruct these complete aggregates when the use case requires them.
+Repositories may persist and reconstruct these complete aggregates when a use case requires them.
 
 However, not every operation loads an entire aggregate.
 
-Execution-heavy operations may expose targeted persistence methods that retrieve or modify only the state required by a particular application use case.
+Execution and scheduling operations may expose targeted persistence methods that retrieve or modify only the state required by a particular Application use case.
 
-This prevents unnecessary aggregate reconstruction during frequent task-processing operations.
+This prevents unnecessary aggregate reconstruction during frequent runtime operations.
 
 ---
 
 ## Atomic State Transitions
 
-Concurrency-sensitive execution changes are implemented as atomic or conditional database operations.
+Concurrency-sensitive changes are implemented using database operations and PostgreSQL concurrency primitives.
 
-Persistence is responsible for ensuring that state transitions occur only from valid current states.
+Persistence is responsible for ensuring that persisted state is changed safely under concurrency.
 
-Application code does not implement database locking or read-modify-write concurrency logic.
+Examples include:
+
+* Conditional task state transitions.
+* Atomic dependency-counter updates.
+* Workflow failure and task cancellation.
+* Row locking when claiming a due chronological trigger.
+
+Application code coordinates what should happen but does not implement database locking or SQL read-modify-write concurrency logic.
 
 ---
 
 ## Transactional Composition
 
-A business transition may require multiple SQL statements.
+A business transition may require multiple persistence operations.
 
 Atomicity does not require every repository operation to consist of exactly one SQL statement.
 
-Multiple statements executed through the same Unit of Work participate in the same database transaction and become visible atomically when committed.
+Operations executed through the same Unit of Work share the same database transaction and become durable together when committed.
+
+For example, chronological scheduling can perform:
+
+```text
+lock due trigger
+        ↓
+advance scheduling state
+        ↓
+create WorkflowExecution
+        ↓
+commit
+```
+
+Although multiple repositories participate, these persistence changes form one atomic transaction.
 
 ---
 
@@ -138,7 +169,9 @@ flowchart TD
 
 Application services define business-level transaction boundaries.
 
-Repositories implement persistence operations within those boundaries.
+The Unit of Work provides repositories that share one SQLAlchemy Session.
+
+Repositories implement persistence operations within that transaction.
 
 ---
 
@@ -150,8 +183,9 @@ Current repositories include:
 
 * `WorkflowDefinitionRepository`
 * `WorkflowExecutionRepository`
+* `ChronologicalTriggerRepository`
 
-Repository APIs are designed around the persistence needs of application use cases rather than generic table-level CRUD.
+Repository APIs are designed around the needs of Application use cases rather than generic table-level CRUD.
 
 ---
 
@@ -192,13 +226,41 @@ Task-processing operations intentionally avoid loading the complete workflow exe
 
 ---
 
+## Chronological Trigger Repository
+
+The chronological trigger repository persists the runtime scheduling state required by chronological triggers.
+
+Responsibilities include:
+
+* Creating scheduling state.
+* Deleting scheduling state.
+* Selecting and locking the earliest due trigger.
+* Updating the next scheduled occurrence.
+
+Its API is intentionally narrow:
+
+```text
+create(...)
+delete(...)
+get_next_due(...)
+update_next_run(...)
+```
+
+It does not calculate when a trigger should run.
+
+That behavior belongs to chronological trigger plugins and is coordinated by the Application Layer.
+
+The repository only stores scheduling state and provides the persistence operations required to process it safely.
+
+---
+
 # Aggregate and Targeted Operations
 
 Persistence uses two complementary access patterns.
 
 ## Aggregate Operations
 
-Aggregate operations are appropriate when the Application Layer needs the complete business object.
+Aggregate operations are appropriate when the Application Layer needs a complete business object.
 
 Examples include:
 
@@ -216,29 +278,32 @@ These operations reconstruct or persist complete aggregate state.
 
 ## Targeted Operations
 
-High-frequency execution operations use narrowly scoped repository methods.
+Runtime-heavy operations use narrowly scoped repository methods.
 
 Examples include:
 
 ```text
-start_task(...)
-complete_task(...)
-retry_task(...)
+WorkflowExecutionRepository.start_task(...)
+WorkflowExecutionRepository.complete_task(...)
+WorkflowExecutionRepository.retry_task(...)
+
+ChronologicalTriggerRepository.get_next_due(...)
+ChronologicalTriggerRepository.update_next_run(...)
 ```
 
-These methods perform the required database transitions directly and return only the information needed by the Application Layer.
+These methods perform or expose only the persistence behavior required by the Application operation.
 
-This avoids patterns such as:
+This avoids unnecessarily doing:
 
 ```text
-load entire WorkflowExecution
+load complete aggregate
         ↓
-modify one TaskExecution
+change one small piece of state
         ↓
-save entire WorkflowExecution
+save complete aggregate
 ```
 
-for operations that can be expressed more efficiently and safely in SQL.
+when the operation can be expressed more efficiently and safely through targeted persistence behavior.
 
 ---
 
@@ -253,12 +318,25 @@ Examples include:
 * `CompleteTaskExecutionResult`
 * `RetryTaskExecutionRequest`
 * `RetryTaskExecutionResult`
+* `DueChronologicalTrigger`
 
 These models represent persistence operation boundaries.
 
-They are not SQLAlchemy models and do not expose database implementation details.
+They are not Domain objects and are not SQLAlchemy models.
 
-They allow repositories to return exactly the information required by an application use case without reconstructing an unnecessary aggregate.
+They allow Persistence to return exactly the information required by an Application use case without exposing database rows or reconstructing unnecessary aggregates.
+
+For example, `DueChronologicalTrigger` can contain the information needed to process a due occurrence:
+
+```text
+trigger definition ID
+workflow definition ID
+plugin type
+plugin configuration
+scheduled occurrence
+```
+
+The Application Layer receives the information it needs without depending on the chronological SQLAlchemy state model.
 
 ---
 
@@ -287,20 +365,26 @@ SQLAlchemy models represent database tables and relationships.
 
 They define:
 
-* Tables
-* Columns
-* Foreign keys
-* Relationships
-* Constraints
-* PostgreSQL-specific storage types
+* Tables.
+* Columns.
+* Foreign keys.
+* Relationships.
+* Constraints.
+* PostgreSQL-specific storage types.
 
 These models remain internal to Persistence.
+
+Chronological scheduling state is represented by a SQLAlchemy model even though it does not have a corresponding core Domain object.
+
+This is intentional:
+
+> **Database tables do not need to correspond one-to-one with Domain objects.**
 
 ---
 
 ## Mappers
 
-Mappers translate between domain objects and SQLAlchemy models.
+Mappers translate between Domain objects and SQLAlchemy models.
 
 Repositories coordinate persistence behavior while mappers perform representation conversion.
 
@@ -319,13 +403,15 @@ Examples of mapped values include:
 
 Persistence does not interpret plugin configuration values.
 
+Chronological scheduling state does not require a mapper because it is not reconstructed into a Domain object. Its repository works directly with the internal persistence model and exposes narrowly scoped operation results where necessary.
+
 ---
 
 # Unit of Work
 
 The Unit of Work defines a database transaction boundary.
 
-Repositories participating in the same Unit of Work share a SQLAlchemy Session.
+Repositories participating in the same Unit of Work share one SQLAlchemy Session.
 
 Conceptually:
 
@@ -347,6 +433,73 @@ The session is closed when the Unit of Work exits.
 
 ---
 
+## Transaction Ownership
+
+The top-level Application operation owns the Unit of Work for a business transaction.
+
+Nested Application operations may participate in the caller's Unit of Work when multiple operations must commit atomically.
+
+For example:
+
+```text
+ChronologicalTriggerService.process_next_due()
+        │
+        │ owns UoW
+        │
+        ├── ChronologicalTriggerRepository
+        │       updates scheduling state
+        │
+        └── WorkflowStartService
+                creates WorkflowExecution
+                using same UoW
+```
+
+Persistence does not decide which business operations belong in one transaction. Application makes that decision and composes repository operations through the shared Unit of Work.
+
+---
+
+## Explicit Flushing
+
+The Unit of Work exposes flushing when later persistence operations in the same transaction depend on rows that have already been staged for persistence.
+
+Workflow definition creation provides an example.
+
+Chronological scheduling state references a persisted `TriggerDefinition` through a foreign key.
+
+The creation flow can therefore be:
+
+```text
+save WorkflowDefinition
+        ↓
+save TriggerDefinitions
+        ↓
+flush
+        ↓
+create ChronologicalTriggerState
+        ↓
+commit
+```
+
+Flushing sends pending SQL statements to PostgreSQL without committing the transaction.
+
+The transaction remains atomic.
+
+If chronological trigger initialization fails after the flush:
+
+```text
+definitions flushed
+        ↓
+initialization fails
+        ↓
+ROLLBACK
+        ↓
+definitions and scheduling state are not persisted
+```
+
+Application uses the Unit of Work's public `flush()` operation rather than accessing the underlying SQLAlchemy Session directly.
+
+---
+
 # Database Lifecycle
 
 Each independently running process creates its own SQLAlchemy Engine during startup.
@@ -359,7 +512,305 @@ A Unit of Work uses a SQLAlchemy Session, which obtains a database connection fr
 
 After the transaction completes and the session closes, the connection becomes available to the pool again.
 
-Long-running application work should not unnecessarily retain database transactions or connections.
+Long-running runtime processes such as Workers, Reconcilers, and Schedulers should not unnecessarily retain database transactions or connections between operations.
+
+---
+
+# Chronological Trigger State
+
+Chronological triggers require durable scheduling state in addition to their reusable trigger definitions.
+
+These concepts are stored separately.
+
+```text
+TriggerDefinition
+├── id
+├── plugin_type
+├── configuration
+└── enabled
+
+ChronologicalTriggerState
+├── trigger_definition_id
+└── next_run_at
+```
+
+The `TriggerDefinition` describes **what the trigger is**.
+
+The chronological state records **the next scheduled occurrence that has not yet been processed**.
+
+For example:
+
+```text
+TriggerDefinition
+    plugin_type = "interval"
+    configuration =
+        interval_seconds = 3600
+
+ChronologicalTriggerState
+    next_run_at = 10:00
+```
+
+After the 10:00 occurrence is successfully processed, the state might become:
+
+```text
+next_run_at = 11:00
+```
+
+The trigger definition remains unchanged.
+
+---
+
+## State Lifecycle
+
+Chronological state is initialized when its trigger definition is created.
+
+Because initialization occurs in the same Unit of Work as workflow definition creation:
+
+```text
+WorkflowDefinition
+TriggerDefinition
+ChronologicalTriggerState
+```
+
+are committed atomically.
+
+A successfully persisted chronological trigger therefore has the durable state required by the Scheduler.
+
+For a chronological trigger with no future occurrence, the scheduling state may later be deleted while the reusable trigger definition remains persisted.
+
+---
+
+# Due-Trigger Selection
+
+The Scheduler processes one due chronological occurrence at a time.
+
+Persistence retrieves the earliest enabled chronological trigger whose:
+
+```text
+next_run_at <= now
+```
+
+Due state is ordered deterministically by scheduled occurrence, with the trigger definition identifier providing a stable secondary ordering.
+
+The selected scheduling-state row is locked using PostgreSQL:
+
+```sql
+FOR UPDATE SKIP LOCKED
+```
+
+The lock remains held for the surrounding database transaction.
+
+---
+
+## Why `FOR UPDATE`
+
+Without row locking, two Scheduler processes could both observe the same due occurrence:
+
+```text
+Scheduler A → reads trigger X
+Scheduler B → reads trigger X
+```
+
+Both could then attempt to process it.
+
+`FOR UPDATE` gives the transaction exclusive access to that scheduling-state row while the occurrence is being processed.
+
+---
+
+## Why `SKIP LOCKED`
+
+A second Scheduler should not wait for the first Scheduler's occurrence if other work is available.
+
+Suppose:
+
+```text
+A
+B
+C
+```
+
+are all due.
+
+Concurrent processing can proceed as:
+
+```text
+Scheduler 1
+    → locks A
+
+Scheduler 2
+    → A is locked
+    → skips A
+    → locks B
+
+Scheduler 3
+    → A and B are locked
+    → skips both
+    → locks C
+```
+
+This allows multiple Scheduler processes to naturally distribute due work.
+
+There is no global Scheduler lock.
+
+---
+
+## Lock Scope
+
+The chronological-state row remains locked while the Application processes the occurrence.
+
+Conceptually:
+
+```text
+BEGIN
+    │
+    ├── select due state
+    │       FOR UPDATE SKIP LOCKED
+    │
+    │       row locked
+    │
+    ├── calculate next occurrence
+    │
+    ├── update/delete scheduling state
+    │
+    ├── create WorkflowExecution
+    │
+    └── COMMIT
+
+row lock released
+```
+
+The trigger calculation occurs while the lock is held.
+
+Chronological trigger plugins are therefore required to calculate occurrences through fast, deterministic, local, I/O-free behavior.
+
+The lock is not held while arbitrary workflow tasks execute.
+
+---
+
+# Atomic Chronological Scheduling
+
+Processing a chronological occurrence modifies two important pieces of persisted state:
+
+```text
+chronological scheduling state
+        +
+WorkflowExecution
+```
+
+These changes use the same Unit of Work.
+
+This provides the invariant:
+
+> **Schedule advancement and WorkflowExecution creation commit atomically.**
+
+A successful transaction cannot leave persistence in either of these states:
+
+```text
+schedule advanced
+but
+WorkflowExecution missing
+```
+
+or:
+
+```text
+WorkflowExecution created
+but
+schedule not advanced
+```
+
+---
+
+## Failure Recovery
+
+The shared transaction also provides straightforward recovery.
+
+### Trigger calculation fails
+
+```text
+lock occurrence
+        ↓
+calculation fails
+        ↓
+ROLLBACK
+        ↓
+lock released
+        ↓
+occurrence remains due
+```
+
+### WorkflowExecution creation fails
+
+```text
+lock occurrence
+        ↓
+advance schedule
+        ↓
+execution creation fails
+        ↓
+ROLLBACK
+        ↓
+schedule advancement undone
+        ↓
+occurrence remains due
+```
+
+### Scheduler process crashes
+
+```text
+open transaction
+        ↓
+Scheduler dies
+        ↓
+connection/transaction terminates
+        ↓
+PostgreSQL rolls back
+        ↓
+row lock released
+        ↓
+occurrence remains due
+```
+
+### Successful processing
+
+```text
+advance scheduling state
+        +
+create WorkflowExecution
+        ↓
+COMMIT
+```
+
+Both changes become durable together.
+
+---
+
+## Why Scheduling Does Not Use Leases
+
+The execution queue uses durable claims and leases because workers may execute arbitrary tasks for significant periods of time.
+
+Chronological scheduling performs only short transactional work:
+
+```text
+lock row
+calculate next occurrence
+update scheduling state
+create WorkflowExecution
+commit
+```
+
+PostgreSQL's row lock therefore acts as the temporary claim.
+
+If the Scheduler disappears, PostgreSQL releases that claim by rolling back the transaction.
+
+Chronological scheduling does not require:
+
+* Scheduler claim tokens.
+* Scheduler heartbeats.
+* Lease expiration.
+* Durable Scheduler ownership.
+
+These remain execution-queue concepts rather than general persistence concepts.
 
 ---
 
@@ -421,19 +872,19 @@ Conceptually:
 
 ```text
 RUNNING
-    |
-    v
+   |
+   v
 COMPLETED
-    |
-    +--> persist output
-    |
-    +--> set completed_at
-    |
-    +--> decrement child dependency counts
-    |
-    +--> identify newly runnable children
-    |
-    +--> complete workflow if appropriate
+   |
+   +--> persist output
+   |
+   +--> set completed_at
+   |
+   +--> decrement child dependency counts
+   |
+   +--> identify newly runnable children
+   |
+   +--> complete workflow if appropriate
 ```
 
 If another concurrent operation has already moved the task to a terminal state, the completion transition does not overwrite that state.
@@ -444,18 +895,18 @@ If another concurrent operation has already moved the task to a terminal state, 
 
 Each task execution stores its remaining dependency count.
 
-When a parent completes successfully, persistence atomically updates its child tasks.
+When a parent completes successfully, Persistence atomically updates its child tasks.
 
 A child becomes runnable when its remaining dependency count reaches zero.
 
 For a graph such as:
 
 ```text
-    A
-   / \
-  B   C
-   \ /
-    D
+   A
+  / \
+ B   C
+  \ /
+   D
 ```
 
 completion of `B` alone does not make `D` runnable.
@@ -532,7 +983,7 @@ Workflow failure and cancellation occur within the same database transaction.
 
 Therefore, once the transaction commits:
 
-> A failed workflow has no remaining `PENDING` or `RUNNING` task executions.
+> **A failed workflow has no remaining `PENDING` or `RUNNING` task executions.**
 
 Cancelled tasks receive their terminal completion timestamp when cancellation occurs.
 
@@ -556,19 +1007,21 @@ Locks acquired by PostgreSQL updates are held until the transaction completes.
 
 They are not released between repository statements.
 
-Concurrent transactions that conflict with those rows wait and then re-evaluate their conditional updates against the newly committed state.
+Chronological scheduling uses the same transactional principle explicitly through row selection with:
 
-This allows multi-statement state transitions to remain transactionally safe without requiring application-level locks.
+```sql
+FOR UPDATE SKIP LOCKED
+```
+
+In both cases, PostgreSQL locking is contained inside Persistence while Application composes the larger business operation.
 
 ---
 
 # Concurrency Model
 
-Persistence provides concurrency safety for persisted execution state.
+Persistence provides concurrency safety for persisted platform state.
 
-Important transitions are conditional on the current task or workflow status.
-
-Examples include:
+Important execution guarantees include:
 
 * Only processable tasks may be started or resumed.
 * Only `RUNNING` tasks may complete.
@@ -577,11 +1030,18 @@ Examples include:
 * Terminal task states cannot be overwritten by stale results.
 * Workflow failure atomically cancels remaining nonterminal tasks.
 
-This allows multiple workers to interact with the same execution state without implementing locks in the Application Layer.
+Important scheduling guarantees include:
+
+* A due chronological occurrence is locked before processing.
+* Concurrent Schedulers skip occurrences already being processed.
+* Different due occurrences can be processed concurrently.
+* Schedule advancement and WorkflowExecution creation participate in the same transaction.
+
+These guarantees allow Application services to coordinate behavior without implementing database-level concurrency themselves.
 
 ---
 
-## Duplicate and Recovered Processing
+## Duplicate and Recovered Task Processing
 
 Queue lease expiration can cause another worker to receive a task whose logical execution is already `RUNNING`.
 
@@ -593,25 +1053,35 @@ Whichever valid persistence transition reaches a terminal state first prevents l
 
 ---
 
-## Concurrency Boundary
+## Concurrency Boundaries
 
-Persistence does not own queue leases or worker ownership.
+Persistence owns concurrency for persisted state but does not own runtime process coordination.
 
-Therefore, persistence does not know whether the worker attempting a state transition currently owns a queue claim.
+For task execution, queue ownership concepts such as:
 
-This is intentional.
+* Claim tokens.
+* Worker identifiers.
+* Heartbeats.
+* Lease expiration.
+* Claim recovery.
 
-Queue ownership concepts such as:
+belong to the execution queue.
 
-* Claim tokens
-* Worker identifiers
-* Heartbeats
-* Lease expiration
-* Claim recovery
+For chronological scheduling, the PostgreSQL transaction and row lock are sufficient because the protected work is short-lived.
 
-belong to the execution queue and runtime infrastructure rather than workflow persistence.
+This distinction is intentional:
 
-As a consequence, a narrow race remains possible if two workers concurrently execute the same logical task and one records terminal failure while the other is about to report success. Whichever worker finishes first is considered to be the final attempt, and the other worker does not commit anything.
+```text
+Long-running task execution
+        ↓
+durable queue lease
+
+Short scheduling transaction
+        ↓
+PostgreSQL row lock
+```
+
+The two systems should not be forced into the same concurrency model.
 
 ---
 
@@ -631,30 +1101,40 @@ future replacement
 RabbitMQ / external broker
 ```
 
-should not require redesigning `WorkflowExecutionRepository`.
+should not require redesigning `WorkflowExecutionRepository` or chronological scheduling persistence.
 
-Persistence determines state.
+Persistence determines durable state.
 
 Application determines business consequences.
 
 Runtime and queue infrastructure manage delivery and worker ownership.
 
+The Scheduler therefore persists its scheduling transition and resulting `WorkflowExecution` through Persistence while existing workflow-start behavior remains responsible for queue interaction after the persistence transaction commits.
+
 ---
 
 # Runtime Initialization
 
-A runtime process that requires persistence generally performs the following initialization:
+A runtime process that requires Persistence generally performs the following initialization:
 
 1. Load configuration.
 2. Create the SQLAlchemy Engine.
 3. Create the Session Factory.
 4. Create the Unit of Work Factory.
-5. Construct application services with the required dependencies.
+5. Construct required Application services.
 6. Begin runtime-specific processing.
 
-Repositories themselves are constructed by the Unit of Work around the shared session used for the transaction.
+Repositories themselves are constructed by the Unit of Work around the shared Session used for each transaction.
 
 Each runtime process may maintain its own Engine and connection pool while communicating with the same PostgreSQL database.
+
+This applies independently to runtime processes such as:
+
+```text
+Worker
+Reconciler
+Scheduler
+```
 
 ---
 
@@ -681,10 +1161,18 @@ persistence/
 │   ├── _mapper.py
 │   └── _model.py
 │
+├── chronological_triggers/
+│   ├── __init__.py
+│   ├── repository.py
+│   ├── operations.py
+│   └── _model.py
+│
 └── __init__.py
 ```
 
-Persistence packages are organized around the aggregates and persistence concerns they own.
+Persistence packages are organized around the aggregates and durable persistence concerns they own.
+
+A package does not imply that its state must be represented as a core Domain concept.
 
 Operation models may be separated from repository implementations where targeted operations require explicit request or result types.
 
@@ -708,7 +1196,7 @@ Unit tests are appropriate for isolated behavior such as:
 
 Repository behavior that depends on SQL semantics should be tested against real PostgreSQL.
 
-Important integration scenarios include:
+Important workflow execution scenarios include:
 
 * Workflow definition persistence and reconstruction.
 * Workflow execution persistence and reconstruction.
@@ -724,7 +1212,19 @@ Important integration scenarios include:
 * Concurrent completion attempts.
 * Concurrent failure attempts.
 
-Mock-based tests should not be used to claim correctness for database concurrency behavior.
+Important chronological scheduling scenarios include:
+
+* Creating chronological scheduling state.
+* Retrieving a due trigger.
+* Ignoring future triggers.
+* Selecting the earliest due trigger.
+* Updating the next occurrence.
+* Deleting scheduling state.
+* Locking selected state.
+* Skipping locked state from a concurrent transaction.
+* Allowing concurrent transactions to claim different due triggers.
+
+Concurrency behavior involving PostgreSQL row locks must be tested against PostgreSQL rather than inferred from mock behavior.
 
 ---
 
@@ -738,10 +1238,13 @@ These tests validate that:
 * Task processing correctly consumes targeted persistence results.
 * Parent outputs reach dependent plugins.
 * Task chains progress correctly.
-* Retries work across application and persistence boundaries.
+* Retries work across Application and Persistence boundaries.
 * Terminal failure produces the expected persisted workflow state.
+* Chronological trigger definitions initialize durable scheduling state.
+* Processing a due occurrence advances its schedule and creates a workflow execution atomically.
+* Overdue recurring triggers advance according to the platform's catch-up semantics.
 
-Queue and worker lifecycle integration remains separate from persistence testing.
+Queue and runtime lifecycle integration remains separate from Persistence testing.
 
 ---
 
@@ -754,22 +1257,25 @@ The Persistence Layer should not contain:
 * `TaskResult` interpretation.
 * Task plugin resolution.
 * Task plugin execution.
+* Trigger plugin resolution.
 * Trigger plugin execution.
+* Trigger occurrence calculation.
 * Queue claims.
 * Queue leases.
 * Queue heartbeats.
 * Worker loops.
 * Scheduler loops.
+* Scheduler polling.
 * HTTP routing.
 * API schemas.
 
-Persistence should expose the state operations required by those systems without implementing their responsibilities.
+Persistence should expose the durable state operations and concurrency primitives required by those systems without implementing their responsibilities.
 
 ---
 
 # Future Evolution
 
-Possible future persistence improvements include:
+Possible future Persistence improvements include:
 
 * Alembic database migrations.
 * Optimized targeted read operations.
@@ -780,8 +1286,12 @@ Possible future persistence improvements include:
 * Archival of historical executions.
 * Partitioning large execution tables.
 * Alternative persistence implementations.
-* Execution-attempt or fencing state if stronger concurrency guarantees become necessary.
+* Execution-attempt or fencing state if stronger task concurrency guarantees become necessary.
 
-These changes should remain internal to Persistence wherever possible.
+Scheduling-specific features should likewise be introduced only when concrete requirements justify them.
 
-The public persistence abstractions should evolve according to concrete Application Layer requirements rather than exposing database implementation details prematurely.
+The current chronological scheduling design intentionally does not require Scheduler leases, heartbeat state, claim tokens, generic trigger-state JSON, or distributed locks.
+
+Future changes should remain internal to Persistence wherever possible.
+
+The public persistence abstractions should evolve according to concrete Application requirements rather than exposing database implementation details prematurely.
