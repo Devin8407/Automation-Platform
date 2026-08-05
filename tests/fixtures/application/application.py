@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from automation_platform.application import (
+    ChronologicalTriggerService,
     TaskProcessingService,
     WorkflowDefinitionService,
     WorkflowStartService,
@@ -113,6 +114,13 @@ def mock_workflow_start_service(
 
 
 @pytest.fixture
+def mock_workflow_start_service_dependency():
+    """Return a mocked workflow start service."""
+
+    return MagicMock(spec=WorkflowStartService)
+
+
+@pytest.fixture
 def mock_task_processing_service(
     mock_uow_factory,
     mock_task_registry,
@@ -122,4 +130,19 @@ def mock_task_processing_service(
     return TaskProcessingService(
         uow_factory=mock_uow_factory,
         task_registry=mock_task_registry,
+    )
+
+
+@pytest.fixture
+def mock_chronological_trigger_service(
+    mock_uow_factory,
+    mock_trigger_registry,
+    mock_workflow_start_service_dependency,
+) -> ChronologicalTriggerService:
+    """Return a chronological trigger service with mocked dependencies."""
+
+    return ChronologicalTriggerService(
+        uow_factory=mock_uow_factory,
+        trigger_registry=mock_trigger_registry,
+        workflow_start_service=mock_workflow_start_service_dependency,
     )

@@ -5,8 +5,14 @@ from uuid import UUID, uuid4
 
 from ...domain import TaskDefinition, TriggerDefinition, WorkflowDefinition
 from ...persistence import UnitOfWork
-from ...plugins import InvalidPluginConfigurationError, TaskRegistry, TriggerRegistry
+from ...plugins import (
+    InvalidPluginConfigurationError,
+    TaskRegistry,
+    Trigger,
+    TriggerRegistry,
+)
 from ..exceptions import InvalidWorkflowDefinitionError
+from ..trigger_initialization import TriggerInitializationService
 from .models import CreateTaskDefinition, CreateTriggerDefinition, CreateWorkflowDefinition
 
 
@@ -22,6 +28,7 @@ class WorkflowDefinitionService:
         uow_factory: Callable[[], UnitOfWork],
         task_registry: TaskRegistry,
         trigger_registry: TriggerRegistry,
+        trigger_initialization_service: TriggerInitializationService,
     ) -> None:
         """Initialize the workflow definition service.
 
@@ -29,11 +36,14 @@ class WorkflowDefinitionService:
             uow_factory: Factory for creating persistence units of work.
             task_registry: Registry of available task plugins.
             trigger_registry: Registry of available trigger plugins.
+            trigger_initialization_service: Service for initializing trigger
+                mechanism state.
         """
 
         self._uow_factory = uow_factory
         self._task_registry = task_registry
         self._trigger_registry = trigger_registry
+        self._trigger_initialization_service = trigger_initialization_service
 
     # ==============================================================================================
     # Public API
@@ -41,6 +51,10 @@ class WorkflowDefinitionService:
 
     def create(self, request: CreateWorkflowDefinition) -> UUID:
         """Create and persist a workflow definition.
+
+        Validates the workflow definition, persists it, initializes any
+        mechanism-specific trigger state, and commits the complete definition
+        atomically.
 
         Args:
             request: Inputs describing the workflow definition to create.
@@ -53,22 +67,31 @@ class WorkflowDefinitionService:
         """
 
         self._validate_tasks(request.tasks)
-        self._validate_triggers(request.triggers)
-
         task_definitions = self._create_task_definitions(request.tasks)
-        trigger_definitions = self._create_trigger_definitions(request.triggers)
+
+        resolved_triggers = self._create_trigger_definitions(request.triggers)
 
         workflow_definition = WorkflowDefinition(
             id=uuid4(),
             name=request.name,
             description=request.description,
             task_definitions=task_definitions,
-            trigger_definitions=trigger_definitions,
+            trigger_definitions=[trigger_definition for trigger_definition, _ in resolved_triggers],
             enabled=request.enabled,
         )
 
         with self._uow_factory() as uow:
             uow.workflow_definitions.save(workflow_definition)
+
+            uow.flush()
+
+            for trigger_definition, trigger_plugin in resolved_triggers:
+                self._trigger_initialization_service.initialize(
+                    trigger_plugin,
+                    trigger_definition,
+                    uow,
+                )
+
             uow.commit()
 
         return workflow_definition.id
@@ -180,15 +203,23 @@ class WorkflowDefinitionService:
 
         return processed != len(tasks)
 
-    def _validate_triggers(self, triggers: list[CreateTriggerDefinition]) -> None:
-        """Validate trigger definitions.
+    def _validate_triggers(
+        self,
+        triggers: list[CreateTriggerDefinition],
+    ) -> list[type[Trigger]]:
+        """Validate trigger definitions and resolve their plugins.
 
         Args:
             triggers: Trigger definitions to validate.
 
+        Returns:
+            Resolved trigger plugins corresponding to the validated definitions.
+
         Raises:
             InvalidWorkflowDefinitionError: If a trigger definition is invalid.
         """
+
+        resolved_plugins: list[type[Trigger]] = []
 
         for trigger in triggers:
             if not self._trigger_registry.contains(trigger.plugin_type):
@@ -204,7 +235,14 @@ class WorkflowDefinitionService:
                     f"Invalid configuration for trigger {trigger.plugin_type!r}: {exc}"
                 ) from exc
 
-    def _create_task_definitions(self, tasks: list[CreateTaskDefinition]) -> list[TaskDefinition]:
+            resolved_plugins.append(plugin)
+
+        return resolved_plugins
+
+    def _create_task_definitions(
+        self,
+        tasks: list[CreateTaskDefinition],
+    ) -> list[TaskDefinition]:
         """Create domain task definitions from application inputs.
 
         Args:
@@ -231,22 +269,32 @@ class WorkflowDefinitionService:
     def _create_trigger_definitions(
         self,
         triggers: list[CreateTriggerDefinition],
-    ) -> list[TriggerDefinition]:
-        """Create domain trigger definitions from application inputs.
+    ) -> list[tuple[TriggerDefinition, type[Trigger]]]:
+        """Validate trigger inputs and create their domain definitions."""
 
-        Args:
-            triggers: Validated trigger definition inputs.
+        trigger_definitions = []
 
-        Returns:
-            Domain trigger definitions.
-        """
+        for trigger in triggers:
+            if not self._trigger_registry.contains(trigger.plugin_type):
+                raise InvalidWorkflowDefinitionError(
+                    f"Unknown trigger plugin type: {trigger.plugin_type!r}."
+                )
 
-        return [
-            TriggerDefinition(
+            try:
+                plugin = self._trigger_registry.get(trigger.plugin_type)
+                plugin.validate_configuration(trigger.configuration)
+            except InvalidPluginConfigurationError as exc:
+                raise InvalidWorkflowDefinitionError(
+                    f"Invalid configuration for trigger {trigger.plugin_type!r}: {exc}"
+                ) from exc
+
+            trigger_definition = TriggerDefinition(
                 id=uuid4(),
                 plugin_type=trigger.plugin_type,
                 configuration=trigger.configuration,
                 enabled=trigger.enabled,
             )
-            for trigger in triggers
-        ]
+
+            trigger_definitions.append((trigger_definition, plugin))
+
+        return trigger_definitions

@@ -211,7 +211,7 @@ def test_start_snapshots_task_configuration(
     workflow_definition_factory,
     mock_uow,
 ):
-    """Task execution configuration should be independent of the source definition."""
+    """Task execution configuration should match the source definition."""
 
     configuration = {
         "url": "https://example.com",
@@ -247,6 +247,7 @@ def test_start_generates_unique_task_execution_ids(
         task_definition_factory(key="task_c"),
     ]
     workflow_definition = workflow_definition_factory(task_definitions=tasks)
+
     mock_uow.workflow_definitions.load.return_value = workflow_definition
 
     mock_workflow_start_service.start(workflow_definition.id)
@@ -272,6 +273,7 @@ def test_start_assigns_tasks_to_workflow_execution(
         task_definition_factory(key="task_c"),
     ]
     workflow_definition = workflow_definition_factory(task_definitions=tasks)
+
     mock_uow.workflow_definitions.load.return_value = workflow_definition
 
     mock_workflow_start_service.start(workflow_definition.id)
@@ -282,6 +284,158 @@ def test_start_assigns_tasks_to_workflow_execution(
         task.workflow_execution_id == workflow_execution.id
         for task in workflow_execution.task_executions
     )
+
+
+# ==================================================================================================
+# Existing Unit of Work
+# ==================================================================================================
+
+
+def test_start_and_commit_uses_supplied_unit_of_work(
+    mock_workflow_start_service,
+    workflow_definition_factory,
+    mock_uow,
+):
+    """Starting with an existing UoW should persist through that UoW."""
+
+    workflow_definition = workflow_definition_factory()
+    mock_uow.workflow_definitions.load.return_value = workflow_definition
+
+    workflow_execution_id = mock_workflow_start_service.start_and_commit(
+        workflow_definition.id,
+        mock_uow,
+    )
+
+    mock_uow.workflow_definitions.load.assert_called_once_with(workflow_definition.id)
+    mock_uow.workflow_executions.create.assert_called_once()
+
+    workflow_execution = mock_uow.workflow_executions.create.call_args.args[0]
+
+    assert workflow_execution.id == workflow_execution_id
+    assert workflow_execution.workflow_definition_id == workflow_definition.id
+    assert workflow_execution.status is WorkflowStatus.RUNNING
+
+    mock_uow.commit.assert_called_once_with()
+
+
+def test_start_and_commit_enqueues_root_tasks(
+    mock_workflow_start_service,
+    task_definition_factory,
+    workflow_definition_factory,
+    mock_uow,
+    mock_execution_queue,
+):
+    """Starting with an existing UoW should enqueue roots after committing."""
+
+    task_a = task_definition_factory(key="task_a")
+    task_b = task_definition_factory(key="task_b")
+    task_c = task_definition_factory(
+        key="task_c",
+        dependencies=[task_a.id, task_b.id],
+    )
+
+    workflow_definition = workflow_definition_factory(
+        task_definitions=[
+            task_a,
+            task_b,
+            task_c,
+        ]
+    )
+
+    mock_uow.workflow_definitions.load.return_value = workflow_definition
+
+    mock_workflow_start_service.start_and_commit(
+        workflow_definition.id,
+        mock_uow,
+    )
+
+    workflow_execution = mock_uow.workflow_executions.create.call_args.args[0]
+
+    executions = {
+        task_execution.task_definition_id: task_execution
+        for task_execution in workflow_execution.task_executions
+    }
+
+    mock_execution_queue.enqueue.assert_called_once()
+
+    enqueued_ids = mock_execution_queue.enqueue.call_args.args[0]
+
+    assert set(enqueued_ids) == {
+        executions[task_a.id].id,
+        executions[task_b.id].id,
+    }
+
+
+def test_start_and_commit_commits_before_enqueueing(
+    mock_workflow_start_service,
+    workflow_definition_factory,
+    mock_uow,
+    mock_execution_queue,
+):
+    """Existing UoW should commit before runnable tasks are enqueued."""
+
+    workflow_definition = workflow_definition_factory()
+    mock_uow.workflow_definitions.load.return_value = workflow_definition
+
+    events = []
+
+    mock_uow.commit.side_effect = lambda: events.append("commit")
+    mock_execution_queue.enqueue.side_effect = lambda _: events.append("enqueue")
+
+    mock_workflow_start_service.start_and_commit(
+        workflow_definition.id,
+        mock_uow,
+    )
+
+    assert events == [
+        "commit",
+        "enqueue",
+    ]
+
+
+def test_start_and_commit_does_not_enqueue_when_commit_fails(
+    mock_workflow_start_service,
+    workflow_definition_factory,
+    mock_uow,
+    mock_execution_queue,
+):
+    """Existing UoW should not enqueue tasks when its commit fails."""
+
+    workflow_definition = workflow_definition_factory()
+    mock_uow.workflow_definitions.load.return_value = workflow_definition
+
+    mock_uow.commit.side_effect = RuntimeError("Commit failed.")
+
+    with pytest.raises(RuntimeError, match="Commit failed"):
+        mock_workflow_start_service.start_and_commit(
+            workflow_definition.id,
+            mock_uow,
+        )
+
+    mock_uow.workflow_executions.create.assert_called_once()
+    mock_execution_queue.enqueue.assert_not_called()
+
+
+def test_start_and_commit_propagates_queue_failure_after_commit(
+    mock_workflow_start_service,
+    workflow_definition_factory,
+    mock_uow,
+    mock_execution_queue,
+):
+    """Queue failure should propagate after the supplied UoW has committed."""
+
+    workflow_definition = workflow_definition_factory()
+    mock_uow.workflow_definitions.load.return_value = workflow_definition
+    mock_execution_queue.enqueue.side_effect = RuntimeError("Queue failed.")
+
+    with pytest.raises(RuntimeError, match="Queue failed"):
+        mock_workflow_start_service.start_and_commit(
+            workflow_definition.id,
+            mock_uow,
+        )
+
+    mock_uow.workflow_executions.create.assert_called_once()
+    mock_uow.commit.assert_called_once_with()
 
 
 # ==================================================================================================
@@ -328,6 +482,57 @@ def test_start_rejects_disabled_workflow_definition(
         match=str(workflow_definition.id),
     ):
         mock_workflow_start_service.start(workflow_definition.id)
+
+    mock_uow.workflow_executions.create.assert_not_called()
+    mock_uow.commit.assert_not_called()
+    mock_execution_queue.enqueue.assert_not_called()
+
+
+def test_start_and_commit_rejects_missing_workflow_definition(
+    mock_workflow_start_service,
+    mock_uow,
+    mock_execution_queue,
+):
+    """Existing UoW should reject a nonexistent workflow without side effects."""
+
+    workflow_definition_id = UUID("12345678-1234-5678-1234-567812345678")
+
+    mock_uow.workflow_definitions.load.return_value = None
+
+    with pytest.raises(
+        WorkflowDefinitionNotFoundError,
+        match=str(workflow_definition_id),
+    ):
+        mock_workflow_start_service.start_and_commit(
+            workflow_definition_id,
+            mock_uow,
+        )
+
+    mock_uow.workflow_executions.create.assert_not_called()
+    mock_uow.commit.assert_not_called()
+    mock_execution_queue.enqueue.assert_not_called()
+
+
+def test_start_and_commit_rejects_disabled_workflow_definition(
+    mock_workflow_start_service,
+    workflow_definition_factory,
+    mock_uow,
+    mock_execution_queue,
+):
+    """Existing UoW should reject a disabled workflow without side effects."""
+
+    workflow_definition = workflow_definition_factory(enabled=False)
+
+    mock_uow.workflow_definitions.load.return_value = workflow_definition
+
+    with pytest.raises(
+        WorkflowDefinitionDisabledError,
+        match=str(workflow_definition.id),
+    ):
+        mock_workflow_start_service.start_and_commit(
+            workflow_definition.id,
+            mock_uow,
+        )
 
     mock_uow.workflow_executions.create.assert_not_called()
     mock_uow.commit.assert_not_called()
@@ -399,4 +604,4 @@ def test_start_propagates_queue_failure_after_commit(
         mock_workflow_start_service.start(workflow_definition.id)
 
     mock_uow.workflow_executions.create.assert_called_once()
-    mock_uow.commit.assert_called_once()
+    mock_uow.commit.assert_called_once_with()

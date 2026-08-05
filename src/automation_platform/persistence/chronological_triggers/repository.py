@@ -49,6 +49,27 @@ class ChronologicalTriggerRepository:
 
         self._session.add(state)
 
+    def delete(
+        self,
+        trigger_definition_id: UUID,
+    ) -> None:
+        """Delete scheduling state for a chronological trigger.
+
+        If no scheduling state exists for the trigger definition, the operation
+        completes without making any changes.
+
+        Args:
+            trigger_definition_id: ID of the associated trigger definition.
+        """
+
+        state = self._session.get(
+            ChronologicalTriggerStateModel,
+            trigger_definition_id,
+        )
+
+        if state is not None:
+            self._session.delete(state)
+
     def get_next_due(
         self,
         now: datetime,

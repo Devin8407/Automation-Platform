@@ -30,6 +30,11 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.workflow_definitions = WorkflowDefinitionRepository(session)
         self.workflow_executions = WorkflowExecutionRepository(session)
 
+    def flush(self) -> None:
+        """Flush pending changes without committing the transaction."""
+
+        self._session.flush()
+
     def commit(self) -> None:
         """Commit the current transaction."""
 

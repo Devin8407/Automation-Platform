@@ -1,27 +1,91 @@
-"""End-to-end tests for Worker workflow execution."""
+"""Helpers for integration tests."""
 
 from __future__ import annotations
 
 from time import monotonic, sleep
 
+from automation_platform.application import (
+    ChronologicalTriggerService,
+    TriggerInitializationService,
+    WorkflowDefinitionService,
+    WorkflowStartService,
+)
 from automation_platform.domain import WorkflowStatus
 
 # ==================================================================================================
-# Public API
+# Application Service Composition
 # ==================================================================================================
 
 
-def load_execution(uow_factory, workflow_execution_id):
+def create_workflow_definition_service(
+    *,
+    uow_factory,
+    task_registry,
+    trigger_registry,
+    execution_queue,
+) -> WorkflowDefinitionService:
+    """Create a fully wired workflow definition service.
+
+    Args:
+        uow_factory: Factory for creating persistence units of work.
+        task_registry: Registry of available task plugins.
+        trigger_registry: Registry of available trigger plugins.
+        execution_queue: Execution queue used when starting workflows.
+
+    Returns:
+        Fully configured workflow definition service.
+    """
+
+    workflow_start_service = WorkflowStartService(
+        uow_factory=uow_factory,
+        execution_queue=execution_queue,
+    )
+
+    chronological_trigger_service = ChronologicalTriggerService(
+        uow_factory=uow_factory,
+        trigger_registry=trigger_registry,
+        workflow_start_service=workflow_start_service,
+    )
+
+    trigger_initialization_service = TriggerInitializationService(
+        chronological_trigger_service=chronological_trigger_service,
+    )
+
+    return WorkflowDefinitionService(
+        uow_factory=uow_factory,
+        task_registry=task_registry,
+        trigger_registry=trigger_registry,
+        trigger_initialization_service=trigger_initialization_service,
+    )
+
+
+# ==================================================================================================
+# Persistence
+# ==================================================================================================
+
+
+def load_execution(
+    uow_factory,
+    workflow_execution_id,
+):
     """Load a workflow execution using real persistence."""
 
     with uow_factory() as uow:
         return uow.workflow_executions.load(workflow_execution_id)
 
 
-def get_task(execution, key):
+def get_task(
+    execution,
+    key,
+):
     """Return a task execution by key."""
 
     return next(task for task in execution.task_executions if task.key == key)
+
+
+# ==================================================================================================
+# Waiting
+# ==================================================================================================
 
 
 def wait_for_terminal_workflow(
@@ -29,7 +93,7 @@ def wait_for_terminal_workflow(
     workflow_execution_id,
     timeout: float = 5.0,
 ):
-    """Wait for a WorkflowExecution to reach a terminal state."""
+    """Wait for a workflow execution to reach a terminal state."""
 
     deadline = monotonic() + timeout
 

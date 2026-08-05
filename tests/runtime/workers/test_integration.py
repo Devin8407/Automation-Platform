@@ -10,7 +10,6 @@ from automation_platform.application.task_processing import TaskProcessingServic
 from automation_platform.application.workflow_definitions import (
     CreateTaskDefinition,
     CreateWorkflowDefinition,
-    WorkflowDefinitionService,
 )
 from automation_platform.application.workflow_start import WorkflowStartService
 from automation_platform.domain import TaskStatus, WorkflowStatus
@@ -18,6 +17,7 @@ from automation_platform.execution_queue.postgres import PostgresExecutionQueue
 from automation_platform.plugins import TaskRegistry, TriggerRegistry
 from automation_platform.runtime.worker import Worker
 from tests.helpers import (
+    create_workflow_definition_service,
     get_task,
     load_execution,
     wait_for_queue_to_become_idle,
@@ -37,9 +37,9 @@ def test_worker_executes_diamond_workflow_to_completion(
     Execute:
 
              produce
-              /   \
+             /   \
          collect-a collect-b
-              \   /
+             \   /
               collect
 
     through the real PostgreSQL queue and Worker.
@@ -53,10 +53,11 @@ def test_worker_executes_diamond_workflow_to_completion(
         lease_timeout=timedelta(seconds=30),
     )
 
-    definition_service = WorkflowDefinitionService(
+    definition_service = create_workflow_definition_service(
         uow_factory=uow_factory,
         task_registry=task_registry,
         trigger_registry=trigger_registry,
+        execution_queue=queue,
     )
 
     start_service = WorkflowStartService(
@@ -201,10 +202,11 @@ def test_worker_retries_task_until_success(
         lease_timeout=timedelta(seconds=30),
     )
 
-    definition_service = WorkflowDefinitionService(
+    definition_service = create_workflow_definition_service(
         uow_factory=uow_factory,
         task_registry=task_registry,
         trigger_registry=trigger_registry,
+        execution_queue=queue,
     )
 
     start_service = WorkflowStartService(
@@ -290,10 +292,11 @@ def test_exhausted_retries_fail_workflow_and_cancel_remaining_tasks(
         lease_timeout=timedelta(seconds=30),
     )
 
-    definition_service = WorkflowDefinitionService(
+    definition_service = create_workflow_definition_service(
         uow_factory=uow_factory,
         task_registry=task_registry,
         trigger_registry=trigger_registry,
+        execution_queue=queue,
     )
 
     start_service = WorkflowStartService(
@@ -385,10 +388,11 @@ def test_cancelled_queued_task_does_not_execute(
         lease_timeout=timedelta(seconds=30),
     )
 
-    definition_service = WorkflowDefinitionService(
+    definition_service = create_workflow_definition_service(
         uow_factory=uow_factory,
         task_registry=task_registry,
         trigger_registry=trigger_registry,
+        execution_queue=queue,
     )
 
     start_service = WorkflowStartService(
@@ -435,7 +439,10 @@ def test_cancelled_queued_task_does_not_execute(
         workflow_execution_id,
     )
 
-    failing_task = get_task(execution, "fail")
+    failing_task = get_task(
+        execution,
+        "fail",
+    )
 
     processing_service.process(failing_task.id)
 
@@ -444,7 +451,10 @@ def test_cancelled_queued_task_does_not_execute(
         workflow_execution_id,
     )
 
-    recording_task = get_task(execution, "recording")
+    recording_task = get_task(
+        execution,
+        "recording",
+    )
 
     assert execution.status is WorkflowStatus.FAILED
     assert recording_task.status is TaskStatus.CANCELLED
@@ -481,7 +491,10 @@ def test_cancelled_queued_task_does_not_execute(
         workflow_execution_id,
     )
 
-    recording_task = get_task(execution, "recording")
+    recording_task = get_task(
+        execution,
+        "recording",
+    )
 
     assert not worker_thread.is_alive()
     assert execution.status is WorkflowStatus.FAILED
@@ -508,10 +521,11 @@ def test_two_workers_process_sibling_tasks(
         lease_timeout=timedelta(seconds=30),
     )
 
-    definition_service = WorkflowDefinitionService(
+    definition_service = create_workflow_definition_service(
         uow_factory=uow_factory,
         task_registry=task_registry,
         trigger_registry=trigger_registry,
+        execution_queue=queue,
     )
 
     start_service = WorkflowStartService(

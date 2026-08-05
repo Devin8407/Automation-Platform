@@ -10,7 +10,6 @@ from automation_platform.application.task_processing import TaskProcessingServic
 from automation_platform.application.workflow_definitions import (
     CreateTaskDefinition,
     CreateWorkflowDefinition,
-    WorkflowDefinitionService,
 )
 from automation_platform.application.workflow_start import WorkflowStartService
 from automation_platform.domain import TaskStatus, WorkflowStatus
@@ -18,7 +17,12 @@ from automation_platform.execution_queue.postgres import PostgresExecutionQueue
 from automation_platform.plugins import TaskRegistry, TriggerRegistry
 from automation_platform.runtime import Reconciler
 from automation_platform.runtime.worker import Worker
-from tests.helpers import get_task, load_execution, wait_for_terminal_workflow
+from tests.helpers import (
+    create_workflow_definition_service,
+    get_task,
+    load_execution,
+    wait_for_terminal_workflow,
+)
 
 # ==================================================================================================
 # Reconciliation
@@ -59,10 +63,11 @@ def test_reconciler_recovers_stranded_workflow(
 
     dropping_queue = DropFirstEnqueueQueue(queue)
 
-    definition_service = WorkflowDefinitionService(
+    definition_service = create_workflow_definition_service(
         uow_factory=uow_factory,
         task_registry=task_registry,
         trigger_registry=trigger_registry,
+        execution_queue=queue,
     )
 
     start_service = WorkflowStartService(
@@ -104,7 +109,10 @@ def test_reconciler_recovers_stranded_workflow(
         workflow_execution_id,
     )
 
-    task = get_task(execution, "produce")
+    task = get_task(
+        execution,
+        "produce",
+    )
 
     assert execution.status is WorkflowStatus.RUNNING
     assert task.status is TaskStatus.PENDING
@@ -157,7 +165,10 @@ def test_reconciler_recovers_stranded_workflow(
 
     assert execution.status is WorkflowStatus.COMPLETED
 
-    task = get_task(execution, "produce")
+    task = get_task(
+        execution,
+        "produce",
+    )
 
     assert task.status is TaskStatus.COMPLETED
     assert task.output.values == {

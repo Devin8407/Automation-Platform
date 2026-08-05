@@ -1,20 +1,23 @@
 """Fixtures for application integration tests."""
 
+from datetime import datetime
 from typing import Any
 
 import pytest
 
-from automation_platform.application.task_processing.services import (
+from automation_platform.application import (
+    ChronologicalTriggerService,
     TaskProcessingService,
-)
-from automation_platform.application.workflow_definitions.services import (
+    TriggerInitializationService,
     WorkflowDefinitionService,
-)
-from automation_platform.application.workflow_start.services import (
     WorkflowStartService,
 )
 from automation_platform.domain import TaskContext, TaskOutput, TaskResult
 from automation_platform.plugins import Task, TaskRegistry, TriggerRegistry
+from automation_platform.plugins.triggers import ChronologicalTrigger
+from automation_platform.plugins.triggers.implementations.interval import (
+    IntervalTrigger,
+)
 
 # ==================================================================================================
 # Test Task Plugin Base
@@ -137,6 +140,72 @@ def recording_task_type():
 
 
 # ==================================================================================================
+# Test Trigger Plugins
+# ==================================================================================================
+
+
+class OneShotTrigger(ChronologicalTrigger):
+    """Chronological trigger with exactly one scheduled occurrence."""
+
+    plugin_type = "one_shot"
+
+    @classmethod
+    def validate_configuration(
+        cls,
+        configuration: dict[str, Any],
+    ) -> None:
+        """Accept a single ISO-formatted occurrence."""
+
+        occurrence = configuration.get("occurrence")
+
+        if not isinstance(occurrence, str):
+            raise ValueError("occurrence must be an ISO-formatted datetime string.")
+
+        if set(configuration) != {"occurrence"}:
+            raise ValueError("One-shot trigger configuration must contain only occurrence.")
+
+        datetime.fromisoformat(occurrence)
+
+    @classmethod
+    def next_occurrence(
+        cls,
+        configuration: dict[str, Any],
+        after: datetime,
+    ) -> datetime | None:
+        """Return the configured occurrence once, then terminate."""
+
+        occurrence = datetime.fromisoformat(configuration["occurrence"])
+
+        if after == occurrence:
+            return None
+
+        return occurrence
+
+
+class FailingInitializationTrigger(ChronologicalTrigger):
+    """Chronological trigger that fails while calculating its first occurrence."""
+
+    plugin_type = "failing_initialization"
+
+    @classmethod
+    def validate_configuration(
+        cls,
+        configuration: dict[str, Any],
+    ) -> None:
+        """Accept an empty configuration."""
+
+    @classmethod
+    def next_occurrence(
+        cls,
+        configuration: dict[str, Any],
+        after: datetime,
+    ) -> datetime | None:
+        """Raise to simulate trigger initialization failure."""
+
+        raise RuntimeError("Trigger initialization failed.")
+
+
+# ==================================================================================================
 # Test Registries
 # ==================================================================================================
 
@@ -156,6 +225,19 @@ class IntegrationTaskRegistry(TaskRegistry):
         self._register(RecordingTask)
 
 
+class IntegrationTriggerRegistry(TriggerRegistry):
+    """Trigger registry containing controlled integration-test plugins."""
+
+    def __init__(self) -> None:
+        """Register integration-test trigger plugins without discovery."""
+
+        self._implementations = {}
+
+        self._register(IntervalTrigger)
+        self._register(OneShotTrigger)
+        self._register(FailingInitializationTrigger)
+
+
 # ==================================================================================================
 # Registries
 # ==================================================================================================
@@ -173,29 +255,14 @@ def task_registry() -> TaskRegistry:
 
 @pytest.fixture
 def trigger_registry() -> TriggerRegistry:
-    """Return an empty trigger registry."""
+    """Return a trigger registry containing integration-test plugins."""
 
-    return TriggerRegistry()
+    return IntegrationTriggerRegistry()
 
 
 # ==================================================================================================
 # Application Services
 # ==================================================================================================
-
-
-@pytest.fixture
-def workflow_definition_service(
-    uow_factory,
-    task_registry,
-    trigger_registry,
-) -> WorkflowDefinitionService:
-    """Return a workflow definition service backed by real persistence."""
-
-    return WorkflowDefinitionService(
-        uow_factory=uow_factory,
-        task_registry=task_registry,
-        trigger_registry=trigger_registry,
-    )
 
 
 @pytest.fixture
@@ -221,4 +288,47 @@ def task_processing_service(
     return TaskProcessingService(
         uow_factory=uow_factory,
         task_registry=task_registry,
+    )
+
+
+@pytest.fixture
+def chronological_trigger_service(
+    uow_factory,
+    trigger_registry,
+    workflow_start_service,
+) -> ChronologicalTriggerService:
+    """Return a chronological trigger service backed by real persistence."""
+
+    return ChronologicalTriggerService(
+        uow_factory=uow_factory,
+        trigger_registry=trigger_registry,
+        workflow_start_service=workflow_start_service,
+    )
+
+
+@pytest.fixture
+def trigger_initialization_service(
+    chronological_trigger_service,
+) -> TriggerInitializationService:
+    """Return a trigger initialization service."""
+
+    return TriggerInitializationService(
+        chronological_trigger_service=chronological_trigger_service,
+    )
+
+
+@pytest.fixture
+def workflow_definition_service(
+    uow_factory,
+    task_registry,
+    trigger_registry,
+    trigger_initialization_service,
+) -> WorkflowDefinitionService:
+    """Return a workflow definition service backed by real persistence."""
+
+    return WorkflowDefinitionService(
+        uow_factory=uow_factory,
+        task_registry=task_registry,
+        trigger_registry=trigger_registry,
+        trigger_initialization_service=trigger_initialization_service,
     )

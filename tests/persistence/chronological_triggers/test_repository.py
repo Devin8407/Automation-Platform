@@ -575,3 +575,56 @@ def test_get_next_due_returns_none_when_only_due_trigger_is_locked(
         session_b.rollback()
         session_a.close()
         session_b.close()
+
+
+def test_delete_removes_existing_state(
+    session: Session,
+) -> None:
+    """Deleting existing state should remove it from persistence."""
+
+    workflow_definition = _create_workflow_definition(session)
+    trigger_definition = _create_trigger_definition(
+        session,
+        workflow_definition_id=workflow_definition.id,
+    )
+
+    repository = ChronologicalTriggerRepository(session)
+
+    repository.create(
+        trigger_definition.id,
+        datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+    )
+
+    session.flush()
+
+    assert (
+        session.get(
+            ChronologicalTriggerStateModel,
+            trigger_definition.id,
+        )
+        is not None
+    )
+
+    repository.delete(trigger_definition.id)
+
+    session.flush()
+
+    assert (
+        session.get(
+            ChronologicalTriggerStateModel,
+            trigger_definition.id,
+        )
+        is None
+    )
+
+
+def test_delete_does_nothing_when_state_does_not_exist(
+    session: Session,
+) -> None:
+    """Deleting nonexistent state should complete without raising an error."""
+
+    repository = ChronologicalTriggerRepository(session)
+
+    repository.delete(uuid4())
+
+    session.flush()

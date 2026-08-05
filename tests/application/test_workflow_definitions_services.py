@@ -17,7 +17,10 @@ from automation_platform.plugins import InvalidPluginConfigurationError
 # ==================================================================================================
 
 
-def configure_plugin_registry(registry: MagicMock, valid_types: set[str]) -> None:
+def configure_plugin_registry(
+    registry: MagicMock,
+    valid_types: set[str],
+) -> None:
     """Configure a mock plugin registry with the given available plugin types."""
 
     registry.contains.side_effect = lambda plugin_type: plugin_type in valid_types
@@ -33,20 +36,35 @@ def configure_plugin_registry(registry: MagicMock, valid_types: set[str]) -> Non
 
 
 @pytest.fixture
+def mock_trigger_initialization_service():
+    """Create a mocked trigger initialization service."""
+
+    return MagicMock()
+
+
+@pytest.fixture
 def service(
     mock_uow_factory,
     mock_task_registry,
     mock_trigger_registry,
+    mock_trigger_initialization_service,
 ) -> WorkflowDefinitionService:
     """Create a workflow definition service with mocked dependencies."""
 
-    configure_plugin_registry(mock_task_registry, {"test_task"})
-    configure_plugin_registry(mock_trigger_registry, {"test_trigger"})
+    configure_plugin_registry(
+        mock_task_registry,
+        {"test_task"},
+    )
+    configure_plugin_registry(
+        mock_trigger_registry,
+        {"test_trigger"},
+    )
 
     return WorkflowDefinitionService(
         uow_factory=mock_uow_factory,
         task_registry=mock_task_registry,
         trigger_registry=mock_trigger_registry,
+        trigger_initialization_service=mock_trigger_initialization_service,
     )
 
 
@@ -150,7 +168,9 @@ def test_create_resolves_dependency_keys_to_ids(
     tasks = {task.key: task for task in saved_workflow.task_definitions}
 
     assert tasks["task_a"].dependencies == []
-    assert tasks["task_b"].dependencies == [tasks["task_a"].id]
+    assert tasks["task_b"].dependencies == [
+        tasks["task_a"].id,
+    ]
     assert tasks["task_c"].dependencies == [
         tasks["task_a"].id,
         tasks["task_b"].id,
@@ -185,14 +205,178 @@ def test_create_constructs_trigger_definitions(
     assert trigger.enabled is False
 
 
+# ==================================================================================================
+# Trigger Initialization
+# ==================================================================================================
+
+
+def test_create_initializes_trigger(
+    service,
+    create_trigger_definition_factory,
+    create_workflow_definition_factory,
+    mock_trigger_registry,
+    mock_trigger_initialization_service,
+    mock_uow,
+):
+    """Creating a workflow should initialize its trigger mechanism state."""
+
+    request = create_workflow_definition_factory(
+        triggers=[
+            create_trigger_definition_factory(
+                plugin_type="test_trigger",
+                configuration={"value": 1},
+            )
+        ]
+    )
+
+    service.create(request)
+
+    saved_workflow = mock_uow.workflow_definitions.save.call_args.args[0]
+    trigger_definition = saved_workflow.trigger_definitions[0]
+    trigger_plugin = mock_trigger_registry.get.return_value
+
+    mock_trigger_initialization_service.initialize.assert_called_once_with(
+        trigger_plugin,
+        trigger_definition,
+        mock_uow,
+    )
+
+
+def test_create_initializes_all_triggers(
+    service,
+    create_trigger_definition_factory,
+    create_workflow_definition_factory,
+    mock_trigger_registry,
+    mock_trigger_initialization_service,
+    mock_uow,
+):
+    """Creating a workflow should initialize every trigger definition."""
+
+    request = create_workflow_definition_factory(
+        triggers=[
+            create_trigger_definition_factory(
+                plugin_type="test_trigger",
+                configuration={"value": 1},
+            ),
+            create_trigger_definition_factory(
+                plugin_type="test_trigger",
+                configuration={"value": 2},
+            ),
+        ]
+    )
+
+    service.create(request)
+
+    saved_workflow = mock_uow.workflow_definitions.save.call_args.args[0]
+
+    assert len(saved_workflow.trigger_definitions) == 2
+
+    calls = mock_trigger_initialization_service.initialize.call_args_list
+
+    assert len(calls) == 2
+
+    assert calls[0].args == (
+        mock_trigger_registry.get.return_value,
+        saved_workflow.trigger_definitions[0],
+        mock_uow,
+    )
+    assert calls[1].args == (
+        mock_trigger_registry.get.return_value,
+        saved_workflow.trigger_definitions[1],
+        mock_uow,
+    )
+
+
+def test_create_saves_workflow_before_initializing_triggers(
+    service,
+    create_workflow_definition_factory,
+    mock_trigger_initialization_service,
+    mock_uow,
+):
+    """Workflow persistence should occur before trigger initialization."""
+
+    request = create_workflow_definition_factory()
+
+    events = []
+
+    mock_uow.workflow_definitions.save.side_effect = lambda *_: events.append("save")
+    mock_trigger_initialization_service.initialize.side_effect = lambda *_: events.append(
+        "initialize"
+    )
+    mock_uow.commit.side_effect = lambda: events.append("commit")
+
+    service.create(request)
+
+    assert events == [
+        "save",
+        "initialize",
+        "commit",
+    ]
+
+
+def test_create_initializes_triggers_before_commit(
+    service,
+    create_workflow_definition_factory,
+    mock_trigger_initialization_service,
+    mock_uow,
+):
+    """Trigger initialization should occur before the transaction commits."""
+
+    request = create_workflow_definition_factory()
+
+    events = []
+
+    mock_trigger_initialization_service.initialize.side_effect = lambda *_: events.append(
+        "initialize"
+    )
+    mock_uow.commit.side_effect = lambda: events.append("commit")
+
+    service.create(request)
+
+    assert events == [
+        "initialize",
+        "commit",
+    ]
+
+
+def test_create_does_not_commit_when_trigger_initialization_fails(
+    service,
+    create_workflow_definition_factory,
+    mock_trigger_initialization_service,
+    mock_uow,
+):
+    """Trigger initialization failure should prevent the transaction from committing."""
+
+    request = create_workflow_definition_factory()
+
+    mock_trigger_initialization_service.initialize.side_effect = RuntimeError(
+        "Trigger initialization failed."
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Trigger initialization failed",
+    ):
+        service.create(request)
+
+    mock_uow.workflow_definitions.save.assert_called_once()
+    mock_uow.commit.assert_not_called()
+
+
+# ==================================================================================================
+# Validation
+# ==================================================================================================
+
+
 def test_create_rejects_no_tasks(
     service,
-    create_task_definition_factory,
     create_workflow_definition_factory,
 ):
     """Creating a workflow should reject if no tasks."""
 
-    request = create_workflow_definition_factory(tasks=[])
+    request = create_workflow_definition_factory(
+        tasks=[],
+    )
 
     with pytest.raises(InvalidWorkflowDefinitionError):
         service.create(request)
@@ -245,8 +429,12 @@ def test_create_rejects_duplicate_task_keys(
 
     request = create_workflow_definition_factory(
         tasks=[
-            create_task_definition_factory(key="duplicate"),
-            create_task_definition_factory(key="duplicate"),
+            create_task_definition_factory(
+                key="duplicate",
+            ),
+            create_task_definition_factory(
+                key="duplicate",
+            ),
         ]
     )
 
@@ -263,10 +451,15 @@ def test_create_rejects_duplicate_dependencies(
 
     request = create_workflow_definition_factory(
         tasks=[
-            create_task_definition_factory(key="task_a"),
+            create_task_definition_factory(
+                key="task_a",
+            ),
             create_task_definition_factory(
                 key="task_b",
-                dependencies=["task_a", "task_a"],
+                dependencies=[
+                    "task_a",
+                    "task_a",
+                ],
             ),
         ]
     )
@@ -373,8 +566,12 @@ def test_create_accepts_nontrivial_acyclic_graph(
 
     request = create_workflow_definition_factory(
         tasks=[
-            create_task_definition_factory(key="task_a"),
-            create_task_definition_factory(key="task_b"),
+            create_task_definition_factory(
+                key="task_a",
+            ),
+            create_task_definition_factory(
+                key="task_b",
+            ),
             create_task_definition_factory(
                 key="task_c",
                 dependencies=["task_a", "task_b"],
@@ -402,6 +599,8 @@ def test_create_rejects_invalid_task_configuration(
     create_workflow_definition_factory,
     mock_task_registry,
 ):
+    """Creating a workflow should reject invalid task plugin configuration."""
+
     plugin = mock_task_registry.get.return_value
     plugin.validate_configuration.side_effect = InvalidPluginConfigurationError(
         "Invalid configuration."
@@ -429,6 +628,8 @@ def test_create_validates_trigger_configuration_with_trigger_registry(
     create_workflow_definition_factory,
     mock_trigger_registry,
 ):
+    """Creating a workflow should validate trigger configuration."""
+
     request = create_workflow_definition_factory(
         triggers=[
             create_trigger_definition_factory(
@@ -452,6 +653,8 @@ def test_create_rejects_invalid_trigger_configuration(
     create_workflow_definition_factory,
     mock_trigger_registry,
 ):
+    """Creating a workflow should reject invalid trigger configuration."""
+
     plugin = mock_trigger_registry.get.return_value
     plugin.validate_configuration.side_effect = InvalidPluginConfigurationError(
         "Invalid configuration."
@@ -470,6 +673,34 @@ def test_create_rejects_invalid_trigger_configuration(
         match="Invalid configuration for trigger",
     ):
         service.create(request)
+
+
+def test_create_does_not_initialize_invalid_trigger(
+    service,
+    create_trigger_definition_factory,
+    create_workflow_definition_factory,
+    mock_trigger_registry,
+    mock_trigger_initialization_service,
+):
+    """Invalid trigger configuration should fail before initialization."""
+
+    plugin = mock_trigger_registry.get.return_value
+    plugin.validate_configuration.side_effect = InvalidPluginConfigurationError(
+        "Invalid configuration."
+    )
+
+    request = create_workflow_definition_factory(
+        triggers=[
+            create_trigger_definition_factory(
+                configuration={"invalid": True},
+            )
+        ]
+    )
+
+    with pytest.raises(InvalidWorkflowDefinitionError):
+        service.create(request)
+
+    mock_trigger_initialization_service.initialize.assert_not_called()
 
 
 # ==================================================================================================

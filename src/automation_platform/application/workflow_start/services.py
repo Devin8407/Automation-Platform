@@ -35,7 +35,7 @@ class WorkflowStartService:
 
         Args:
             uow_factory: Factory for creating persistence units of work.
-            queue: Execution queue used to enqueue runnable tasks.
+            execution_queue: Execution queue used to enqueue runnable tasks.
         """
 
         self._uow_factory = uow_factory
@@ -46,11 +46,10 @@ class WorkflowStartService:
     # ==============================================================================================
 
     def start(self, workflow_definition_id: UUID) -> UUID:
-        """Create and start an execution of a workflow definition.
+        """Start a workflow execution using a new unit of work.
 
-        Loads the requested workflow definition, creates its workflow and task
-        execution state, persists the execution atomically, and enqueues the
-        initially runnable tasks after the transaction commits.
+        Creates a unit of work, creates and persists the workflow execution,
+        commits the transaction, and then enqueues the initially runnable tasks.
 
         Args:
             workflow_definition_id: Identifier of the workflow definition to start.
@@ -64,22 +63,55 @@ class WorkflowStartService:
         """
 
         with self._uow_factory() as uow:
-            workflow_definition = uow.workflow_definitions.load(workflow_definition_id)
+            return self.start_and_commit(
+                workflow_definition_id,
+                uow,
+            )
 
-            if workflow_definition is None:
-                raise WorkflowDefinitionNotFoundError(
-                    f"Workflow definition {workflow_definition_id} does not exist."
-                )
+    def start_and_commit(
+        self,
+        workflow_definition_id: UUID,
+        uow: UnitOfWork,
+    ) -> UUID:
+        """Start a workflow execution using and committing an existing unit of work.
 
-            if not workflow_definition.enabled:
-                raise WorkflowDefinitionDisabledError(
-                    f"Workflow definition {workflow_definition_id} is disabled."
-                )
+        Any persistence changes already made through the supplied unit of work
+        are committed atomically with creation of the workflow execution.
+        Initially runnable tasks are enqueued only after the transaction
+        successfully commits.
 
-            workflow_execution, root_task_ids = self._create_workflow_execution(workflow_definition)
+        The caller must not perform additional persistence operations through the
+        unit of work after calling this method.
 
-            uow.workflow_executions.create(workflow_execution)
-            uow.commit()
+        Args:
+            workflow_definition_id: Identifier of the workflow definition to start.
+            uow: Existing unit of work whose transaction should be committed.
+
+        Returns:
+            Identifier of the created workflow execution.
+
+        Raises:
+            WorkflowDefinitionNotFoundError: If the workflow definition does not exist.
+            WorkflowDefinitionDisabledError: If the workflow definition is disabled.
+        """
+
+        workflow_definition = uow.workflow_definitions.load(workflow_definition_id)
+
+        if workflow_definition is None:
+            raise WorkflowDefinitionNotFoundError(
+                f"Workflow definition {workflow_definition_id} does not exist."
+            )
+
+        if not workflow_definition.enabled:
+            raise WorkflowDefinitionDisabledError(
+                f"Workflow definition {workflow_definition_id} is disabled."
+            )
+
+        workflow_execution, root_task_ids = self._create_workflow_execution(workflow_definition)
+
+        uow.workflow_executions.create(workflow_execution)
+
+        uow.commit()
 
         self._execution_queue.enqueue(root_task_ids)
 
