@@ -2,47 +2,24 @@
 
 ## Purpose
 
-Trigger plugins define configurable behavior for workflow activation
-mechanisms.
+Trigger plugins define configurable behavior for workflow activation mechanisms.
 
-Triggers do not all share one natural runtime model. A chronological
-trigger, webhook trigger, and future filesystem trigger can require
-fundamentally different platform infrastructure.
+Triggers do not share one natural runtime model: chronological, webhook, and filesystem triggers may require fundamentally different infrastructure. Trigger extensibility is therefore organized around **mechanism interfaces**, not a universal polling method such as `is_ready()`.
 
-For that reason, trigger extensibility is organized around **mechanism
-interfaces** rather than a universal polling method such as
-`is_ready()`.
+---
 
-------------------------------------------------------------------------
+## Base Interface and Mechanisms
 
-## Base Trigger Interface
+Every trigger derives from `Trigger`, which currently adds no behavior beyond the shared plugin contract:
 
-Every trigger derives from the common `Trigger` interface:
+- `plugin_type`
+- `validate_configuration(...)`
 
-``` text
-Plugin
-└── Trigger
-```
-
-`Trigger` currently adds no behavior beyond the shared plugin contract:
-
--   `plugin_type`
--   `validate_configuration(...)`
-
-The base type identifies the plugin category. More specific interfaces
-define mechanism behavior.
-
-------------------------------------------------------------------------
-
-## Trigger Mechanisms
-
-A trigger mechanism is a family of trigger implementations that can be
-hosted by the same Application/runtime infrastructure because they share
-a behavioral contract.
+The base type identifies the plugin category. Mechanism interfaces define shared behavior for trigger families that can be hosted by the same Application/runtime infrastructure.
 
 The implemented chronological family is:
 
-``` text
+```text
 Trigger
 └── ChronologicalTrigger
     ├── IntervalTrigger
@@ -53,57 +30,47 @@ Trigger
 
 `ChronologicalTrigger` defines:
 
-``` python
+```python
 next_occurrence(
     configuration,
     after,
 ) -> datetime | None
 ```
 
-Future mechanisms may introduce their own interfaces:
+Other mechanisms may introduce their own interfaces:
 
-``` text
+```text
 Trigger
 ├── ChronologicalTrigger
 ├── WebhookTrigger       [future]
 └── FilesystemTrigger    [future]
 ```
 
-There is deliberately no `TriggerMechanism` enum. The class hierarchy is
-the source of truth. If `IntervalTrigger` inherits from
-`ChronologicalTrigger`, it belongs to the chronological mechanism.
+There is deliberately no `TriggerMechanism` enum. The class hierarchy is the source of truth: if `IntervalTrigger` inherits from `ChronologicalTrigger`, it belongs to that mechanism. Application can therefore dispatch on the mechanism interface without duplicating the same information in metadata.
 
-This lets Application dispatch use the mechanism interface itself rather
-than duplicate the same information in metadata.
+---
 
-------------------------------------------------------------------------
+## Persisted Definitions and Resolution
 
-## Persisted Trigger Definitions
+A generic trigger definition remains small:
 
-The generic trigger definition remains small:
-
-``` text
+```text
 TriggerDefinition
 ├── plugin_type
 ├── configuration
 └── enabled
 ```
 
-For an interval trigger:
+For example:
 
-``` text
+```text
 plugin_type = "interval"
-
-configuration = {
-    "interval_seconds": 60
-}
+configuration = {"interval_seconds": 60}
 ```
 
-The definition does not persist a separate mechanism or category.
+No separate mechanism or category is persisted. Resolution uses the implementation type:
 
-Resolution works through the implementation type:
-
-``` text
+```text
 "interval"
     │
     ▼
@@ -115,39 +82,27 @@ IntervalTrigger
     └── inherits ChronologicalTrigger
 ```
 
-------------------------------------------------------------------------
+---
 
 ## Configuration Validation
 
-Concrete trigger plugins own validation of plugin-specific
-configuration.
+Concrete plugins own plugin-specific validation. During workflow-definition creation, Application resolves the plugin and invokes:
 
-During workflow-definition creation, Application resolves the plugin and
-invokes:
-
-``` text
+```text
 plugin.validate_configuration(configuration)
 ```
 
-Application does not duplicate rules such as which fields an interval
-trigger accepts or which interval values are valid.
+Application does not duplicate rules such as accepted interval fields or valid interval values.
 
-Validation is separate from mechanism initialization. Configuration is
-validated first; mechanism-specific Application infrastructure then
-initializes any durable state required by that mechanism.
+Validation and mechanism initialization are separate: configuration is validated first, then mechanism-specific Application infrastructure initializes any required durable state.
 
-------------------------------------------------------------------------
+---
 
-## Chronological Triggers
+## Chronological Trigger Contract
 
-Chronological triggers start workflows based on time.
+Chronological triggers start workflows based on time. A plugin calculates its next occurrence relative to a supplied datetime:
 
-The first implementation is `IntervalTrigger`.
-
-A chronological plugin calculates its next occurrence relative to a
-supplied datetime:
-
-``` text
+```text
 configuration + after
         │
         ▼
@@ -157,45 +112,37 @@ ChronologicalTrigger.next_occurrence(...)
 datetime | None
 ```
 
-`next_occurrence()` is intentionally constrained to be:
+`next_occurrence()` must remain:
 
--   Fast.
--   Deterministic.
--   Local.
--   I/O-free.
--   Independent of Persistence, queues, and Application services.
+- Fast.
+- Deterministic.
+- Local.
+- I/O-free.
+- Independent of Persistence, queues, and Application services.
 
-This is important because scheduling may invoke it while PostgreSQL
-holds a row lock on the trigger's durable state.
+Scheduling may invoke it while PostgreSQL holds a row lock on durable trigger state.
 
-A chronological plugin does **not** query scheduling state, lock rows,
-update `next_run_at`, create workflow executions, commit transactions,
-enqueue tasks, or run the Scheduler loop.
+A chronological plugin does **not** query scheduling state, lock rows, update `next_run_at`, create workflow executions, commit transactions, enqueue tasks, or run the Scheduler loop.
 
-------------------------------------------------------------------------
+### `IntervalTrigger`
 
-## IntervalTrigger
+`IntervalTrigger` uses configuration such as:
 
-`IntervalTrigger` uses configuration conceptually like:
-
-``` json
+```json
 {
   "interval_seconds": 60
 }
 ```
 
-Its next occurrence is:
+Its calculation is:
 
-``` text
+```text
 next occurrence = after + interval
 ```
 
-For recurring schedules, Application passes the persisted scheduled
-occurrence as `after`, not wall-clock `now`.
+For recurring schedules, Application passes the persisted scheduled occurrence as `after`, not wall-clock `now`. This preserves deterministic catch-up:
 
-That preserves deterministic catch-up:
-
-``` text
+```text
 interval:        1 hour
 next_run_at:     09:00
 current time:    11:30
@@ -205,22 +152,17 @@ current time:    11:30
 11:00 -> 12:00
 ```
 
-The initial policy therefore processes missed occurrences rather than
-skipping directly to the first future time.
+The initial policy therefore processes missed occurrences rather than skipping directly to the first future time.
 
-------------------------------------------------------------------------
+---
 
 ## Mechanism Initialization
 
-Some mechanisms need durable runtime state beyond their reusable
-`TriggerDefinition`.
-
-Chronological triggers need a persisted `next_run_at`. The plugin does
-not create this state itself.
+Some mechanisms require durable runtime state beyond their reusable `TriggerDefinition`. Chronological triggers, for example, need persisted `next_run_at`; the plugin does not create this state.
 
 During definition creation:
 
-``` text
+```text
 WorkflowDefinitionService
         │
         ├── resolve plugin
@@ -236,35 +178,17 @@ ChronologicalTriggerService.initialize(...)
 Persistence
 ```
 
-The initialization dispatcher operates on mechanism interfaces, not
-concrete plugin names.
+Initialization dispatch operates on mechanism interfaces, not concrete plugin names. A future `CronTrigger(ChronologicalTrigger)` therefore uses the existing chronological initialization path automatically.
 
-Conceptually:
+A valid mechanism requiring no initialization simply has no initialization action; there is no `NoInitializationTrigger` abstraction. Initialization and durable state are Application/Persistence concerns, not Plugin Layer concerns.
 
-``` text
-ChronologicalTrigger
-        │
-        ▼
-ChronologicalTriggerService.initialize
-```
-
-A future `CronTrigger(ChronologicalTrigger)` therefore uses the existing
-chronological initialization path automatically.
-
-A valid mechanism that requires no initialization simply has no
-initialization action. There is no `NoInitializationTrigger`
-abstraction.
-
-Initialization and durable state are Application/Persistence concerns,
-not Plugin Layer concerns.
-
-------------------------------------------------------------------------
+---
 
 ## Runtime Relationship
 
-The Scheduler runtime does not directly orchestrate trigger plugins.
+The Scheduler runtime is a thin driver and does not directly orchestrate trigger plugins:
 
-``` text
+```text
 Scheduler Runtime
         │
         │ process_next_due()
@@ -278,44 +202,34 @@ ChronologicalTriggerService
         └── WorkflowStartService creates execution
 ```
 
-The Scheduler remains a thin driver of the Application capability.
+Ownership remains explicit:
 
-Persistence owns durable chronological state and PostgreSQL locking.
-Application owns the transaction and orchestration. The plugin owns only
-trigger-specific validation and next-occurrence calculation.
+- **Persistence:** durable chronological state and PostgreSQL locking.
+- **Application:** transactions and orchestration.
+- **Plugin:** trigger-specific validation and next-occurrence calculation.
 
-------------------------------------------------------------------------
+Detailed transaction, `FOR UPDATE SKIP LOCKED`, and scheduling-concurrency behavior belongs in the Application/Persistence chronological-trigger documentation.
+
+---
 
 ## Durable State Is Not Plugin State
 
 Chronological scheduling persists state such as:
 
-``` text
+```text
 trigger_definition_id
 next_run_at
 ```
 
-That state belongs to Persistence and is orchestrated by Application.
+This state belongs to Persistence and is orchestrated by Application. It is not stored in a generic plugin runtime-state object or controlled by the plugin implementation.
 
-It is not stored in a generic plugin runtime-state object and is not
-controlled by the plugin implementation.
+Future trigger mechanisms may require fundamentally different state. Add mechanism-appropriate persistence when required rather than forcing every trigger into one generic state schema.
 
-Different trigger mechanisms may eventually require fundamentally
-different state. They should introduce mechanism-appropriate persistence
-only when required rather than forcing all triggers into one generic
-state schema.
-
-Detailed transaction, `FOR UPDATE SKIP LOCKED`, and scheduling
-concurrency behavior belongs in the Application/Persistence
-chronological-trigger documentation rather than here.
-
-------------------------------------------------------------------------
+---
 
 ## Package Organization
 
-The trigger package is currently well served by:
-
-``` text
+```text
 plugins/triggers/
 ├── interface.py
 ├── registry.py
@@ -324,71 +238,44 @@ plugins/triggers/
     └── interval.py
 ```
 
-The base `Trigger` interface stays at the trigger package root because
-it represents the entire trigger category.
+`Trigger` stays at the package root because it represents the whole category. `ChronologicalTrigger` can also remain directly under `triggers/` while it is a small shared mechanism interface. If a mechanism later grows enough to own several support modules, it can become a mechanism-specific subpackage.
 
-`ChronologicalTrigger` can also remain directly under `triggers/`: it is
-a small shared mechanism interface, and a deeper subpackage would add
-structure without currently reducing complexity.
+---
 
-If a trigger mechanism later grows enough to own several support
-modules, it can then become a mechanism-specific subpackage.
+## Extending Triggers
 
-------------------------------------------------------------------------
+A new chronological plugin should normally require only another implementation:
 
-## Testing
-
-Shared trigger infrastructure tests should cover discovery,
-registration, duplicate handling, lookup, and unknown plugin handling.
-
-`IntervalTrigger` tests should cover:
-
--   Valid configuration.
--   Missing or malformed interval configuration.
--   Zero and negative intervals.
--   Correct next-occurrence calculation.
--   Relevant edge cases.
-
-Application integration tests should separately verify:
-
--   Unknown trigger types are rejected during definition creation.
--   Configuration validation occurs during definition creation.
--   Chronological triggers receive chronological initialization.
--   Non-chronological mechanisms do not receive chronological state.
--   Due triggers resolve the correct plugin.
--   Scheduling failures roll back according to the Application
-    transaction design.
-
-`FOR UPDATE SKIP LOCKED` and multi-Scheduler concurrency are
-Persistence/Application integration concerns, not plugin unit-test
-concerns.
-
-------------------------------------------------------------------------
-
-## Adding Future Triggers
-
-A new chronological plugin should normally require only another
-implementation:
-
-``` python
+```python
 class CronTrigger(ChronologicalTrigger):
     ...
 ```
 
-Existing chronological Application, Persistence, and Scheduler
-infrastructure should host it without changes.
+Existing chronological Application, Persistence, initialization, and Scheduler infrastructure should host it without changes.
 
-A fundamentally different mechanism such as webhooks may legitimately
-require a new mechanism interface, Application capability, persistence
-support if necessary, runtime/API entry point, and initialization
-dispatch entry if initialization is needed.
+A fundamentally different mechanism such as webhooks may legitimately require a new mechanism interface, Application capability, persistence support where needed, runtime/API entry point, and initialization dispatch entry when initialization is required.
 
-That does not violate the plugin architecture. Extensibility applies
-within a supported mechanism; the platform does not force unrelated
-mechanisms through one runtime model.
+This does not violate the architecture: extensibility applies within a supported mechanism; unrelated mechanisms are not forced through one runtime model.
+
+---
+
+## Testing
+
+Shared trigger infrastructure tests should cover discovery, registration, duplicate handling, lookup, and unknown-plugin handling.
+
+`IntervalTrigger` tests should cover valid configuration, missing or malformed interval configuration, zero and negative intervals, correct next-occurrence calculation, and relevant edge cases.
+
+Application integration tests should separately verify:
+
+- Unknown trigger types are rejected during definition creation.
+- Configuration validation occurs during definition creation.
+- Chronological triggers receive chronological initialization.
+- Non-chronological mechanisms do not receive chronological state.
+- Due triggers resolve the correct plugin.
+- Scheduling failures roll back according to the Application transaction design.
+
+`FOR UPDATE SKIP LOCKED` and multi-Scheduler concurrency are Persistence/Application integration concerns, not plugin unit-test concerns.
 
 The central rule is:
 
-> **Trigger plugins define trigger-specific behavior. Mechanism-specific
-> Application services provide the platform behavior required to host
-> them.**
+> **Trigger plugins define trigger-specific behavior. Mechanism-specific Application services provide the platform behavior required to host them.**

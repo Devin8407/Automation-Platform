@@ -1,4 +1,4 @@
-# ADR-XXX: Explicit Runtime Configuration and Composition Roots
+# ADR-020: Explicit Runtime Configuration and Composition Roots
 
 ## Status
 
@@ -6,41 +6,30 @@ Accepted
 
 ## Context
 
-The Automation Platform consists of multiple independently executable runtime processes, including:
+The Automation Platform has multiple independently executable Runtime processes, including:
 
-- Workers
+- Worker
 - Reconciler
 - Scheduler
 - API server
 
-These processes require shared configuration and infrastructure, including:
+These processes require configuration and infrastructure such as:
 
-- Database connection settings
-- Queue configuration
-- Runtime polling intervals
-- Lease and heartbeat timing
-- Logging configuration
+- Database settings.
+- Queue configuration.
+- Runtime polling intervals.
+- Lease and heartbeat timing.
+- Logging configuration.
 
-A decision is required regarding:
-
-1. How runtime configuration is made available throughout the system.
-2. Where runtime dependencies are constructed and wired together.
-
-Configuration could be exposed through globally accessible settings or singleton objects. This would allow components to retrieve configuration directly when needed, but it would introduce implicit dependencies and global state.
-
-Alternatively, individual components could read environment variables directly or construct their own infrastructure. This would distribute configuration and dependency-construction responsibilities throughout the codebase and couple application components to deployment concerns.
-
-Instead, configuration will be loaded once at each process boundary and passed explicitly through a runtime composition root responsible for constructing that process's dependency graph.
+The architecture needs a consistent way to load configuration and construct each process's dependencies without introducing global state or coupling components to deployment concerns.
 
 ## Decision
 
-Each independently executable runtime process will have a bootstrap module that acts as its composition root.
+Each executable Runtime will have a bootstrap module that acts as its **composition root**.
 
-Runtime configuration will be loaded from environment variables into an immutable `Settings` object at process startup.
+Configuration is loaded once at process startup from environment variables into an immutable `Settings` object.
 
-The bootstrap module will use these settings to construct shared infrastructure and application dependencies and explicitly provide those dependencies to the runtime.
-
-Conceptually:
+Bootstrap then uses those settings to construct the dependencies required by that process:
 
 ```text
 Environment Variables
@@ -51,117 +40,115 @@ Settings
         ↓
 Runtime Bootstrap
         ↓
-Shared Infrastructure
+Infrastructure
         ↓
 Application / Queue Dependencies
         ↓
 Runtime
 ```
 
-`Settings` will not be exposed as globally accessible state.
+`Settings` is not exposed as globally accessible state.
 
-Components will not independently load environment variables or retrieve configuration through a global settings object. Instead, configuration values will be supplied explicitly to the components that require them during dependency construction.
+Components do not independently:
 
-Runtime classes will likewise not construct their own infrastructure. Construction and wiring of dependencies belong to their respective bootstrap composition roots.
+- Read environment variables.
+- Retrieve global Settings.
+- Construct shared infrastructure.
 
-Deployment mechanisms such as Docker and Docker Compose may provide environment variables and select which runtime executable to launch, but they will not own application dependency composition.
+Instead, required configuration and dependencies are supplied explicitly during construction.
+
+Runtime classes likewise do not construct their own repositories, Queue implementations, Application services, or shared infrastructure. Their bootstrap modules own that responsibility.
+
+Deployment mechanisms such as Docker or Docker Compose may supply environment variables and select which executable to launch, but they do not own application dependency composition.
 
 ## Alternatives Considered
 
 ### Global Settings Object
 
-Expose a process-wide `Settings` singleton that components can access when needed.
+Expose process-wide Settings that components can access directly.
 
 **Pros**
 
-- Convenient access to configuration.
-- Minimal dependency plumbing.
-- Simple for small applications.
+- Convenient.
+- Requires little dependency plumbing.
 
 **Cons**
 
 - Introduces global state.
 - Makes dependencies implicit.
-- Makes components harder to test in isolation.
-- Allows configuration concerns to spread throughout the architecture.
-- Makes it less clear which components actually require configuration.
+- Makes isolated testing harder.
+- Allows configuration concerns to spread throughout the codebase.
 
-### Components Load Environment Variables Directly
+### Components Read Environment Variables
 
-Allow individual components to retrieve the environment variables they require.
+Allow individual components to load the values they require.
 
 **Pros**
 
-- Components can obtain configuration independently.
-- Less bootstrap wiring is required.
+- Reduces bootstrap wiring.
 
 **Cons**
 
-- Couples application components to the deployment environment.
-- Duplicates configuration parsing and validation.
+- Couples components to the deployment environment.
+- Duplicates parsing and validation.
+- Distributes configuration responsibility.
 - Makes testing more difficult.
-- Distributes configuration responsibility throughout the codebase.
-- Prevents configuration from being validated centrally.
 
 ### Runtime Classes Construct Their Dependencies
 
-Allow each runtime class to construct its repositories, queue, application services, and infrastructure internally.
+Allow Runtime classes to construct their own infrastructure and services.
 
 **Pros**
 
-- Simple runtime startup.
-- Fewer dependencies exposed through constructors.
+- Simplifies process startup.
+- Requires fewer constructor dependencies.
 
 **Cons**
 
-- Couples runtime behavior to concrete infrastructure.
-- Makes runtime classes difficult to unit test.
+- Couples Runtime behavior to concrete infrastructure.
 - Mixes process behavior with dependency construction.
-- Obscures the dependency graph.
-- Makes replacing implementations more difficult.
+- Obscures dependency graphs.
+- Makes Runtime classes harder to test.
+- Makes implementations harder to replace.
 
-### Explicit Runtime Configuration and Composition Roots (Selected)
+### Explicit Configuration and Composition Roots (Selected)
 
-Load configuration once and construct the dependency graph at each runtime's process boundary.
+Load configuration once and explicitly construct each process's dependency graph at its Runtime boundary.
 
 **Pros**
 
 - Keeps dependencies explicit.
 - Avoids global configuration state.
-- Centralizes configuration parsing and validation.
-- Keeps runtime behavior separate from dependency construction.
-- Improves unit testing.
-- Allows each runtime process to construct only the dependencies it requires.
-- Makes infrastructure implementations easier to replace.
-- Provides a clear process-level dependency graph.
-- Works naturally with local development, containers, and production deployment.
+- Centralizes parsing and validation.
+- Separates Runtime behavior from dependency construction.
+- Allows each process to construct only what it requires.
+- Improves testing and implementation replaceability.
+- Works consistently across local and deployed environments.
 
 **Cons**
 
 - Requires explicit dependency wiring.
-- Bootstrap modules contain some repetitive construction logic.
-- Adding dependencies may require updating multiple runtime composition roots.
+- Some construction logic may be repeated across Runtime bootstraps.
+- Shared dependency changes may require updates to multiple bootstraps.
 
 ## Consequences
 
 ### Positive
 
-- Configuration has a single, well-defined entry point at process startup.
-- Environment-specific concerns remain at the outer runtime boundary.
-- Application, Domain, Plugin, and Persistence components do not depend directly on environment variables.
-- Components expose their configuration requirements through explicit dependencies.
+- Configuration has one well-defined process entry point.
+- Environment concerns remain at the outer Runtime boundary.
+- Application, Domain, Plugins, and Persistence do not depend directly on environment variables.
 - Runtime classes remain independently testable.
-- Each executable process has a clear composition root.
+- Each executable process has an explicit dependency graph.
 - Shared infrastructure can be constructed once per process and reused where appropriate.
-- Deployment configuration remains separate from Python application composition.
-- Future runtimes can follow the same startup architecture without introducing global state.
+- Future Runtimes can follow the same composition model without introducing global state.
 
 ### Negative
 
-- Runtime bootstraps require explicit dependency construction.
-- Some dependency-construction code may be repeated between runtime processes.
-- Changes to shared dependencies may require updates to multiple bootstrap modules.
+- Runtime bootstraps contain explicit construction code.
+- Some dependency wiring may be duplicated.
+- Changes to shared dependencies may affect multiple composition roots.
 
-This duplication is intentionally preferred over introducing global state or prematurely creating a generalized dependency-injection framework.
+This duplication is intentionally preferred over global state or a premature dependency-injection framework.
 
-Shared bootstrap helpers may be extracted later if repeated construction logic develops into a meaningful and stable abstraction.
+Shared bootstrap helpers may be introduced later if repeated construction behavior becomes a meaningful and stable abstraction.

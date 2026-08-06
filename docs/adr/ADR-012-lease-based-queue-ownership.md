@@ -20,8 +20,6 @@ A decision was required regarding how queue ownership should be represented.
 
 ## Decision
 
-## Decision
-
 Queue ownership is represented using renewable leases.
 
 Claiming work assigns:

@@ -2,7 +2,14 @@
 
 This directory contains the technical documentation for the Automation Platform.
 
-Documentation is organized by purpose, from high-level system architecture to subsystem design, runtime behavior, architectural decisions, and project planning.
+Documentation is organized into three primary areas:
+
+```text
+docs/
+├── architecture/    Current system design and technical behavior
+├── adr/             Architectural decisions and their reasoning
+└── planning         Project direction and implementation priorities
+```
 
 For a first introduction to the system, start with the [Architecture Overview](architecture/overview.md).
 
@@ -10,95 +17,83 @@ For a first introduction to the system, start with the [Architecture Overview](a
 
 # Architecture
 
-Documentation describing the overall structure, execution model, and major layers of the platform.
+[Architecture Documentation](architecture/README.md)
 
-- [Architecture README](architecture/README.md)
-- [Architecture Overview](architecture/overview.md)
-- [Execution Model](architecture/execution-model.md)
-- [Application Layer](architecture/application.md)
-- [Domain Architecture](architecture/domain.md)
-- [Persistence Architecture](architecture/persistence.md)
-- [Database Schema](architecture/database-schema.md)
-- [Data Model](architecture/data-model.md)
-- [Project Structure](architecture/project-structure.md)
+Describes the system **as it currently exists**, including:
 
-These documents explain how the major components of the platform interact and where responsibilities are placed.
+- Architectural responsibilities and boundaries.
+- Domain and data models.
+- Workflow execution.
+- Application orchestration.
+- Persistence and concurrency.
+- Queue-based work distribution.
+- Plugin extensibility.
+- Runtime processes.
+- Configuration, infrastructure, and observability.
 
----
-
-# Subsystems
-
-Documentation for major infrastructure and extension subsystems.
-
-## Execution Queue
-
-Describes runnable-work distribution, lease-based worker ownership, heartbeats, concurrency, and queue recovery behavior.
-
-- [Execution Queue](architecture/execution-queue.md)
-
-## Plugin System
-
-Describes plugin discovery, registration, interfaces, and the extension model used by tasks and triggers.
-
-- [Plugin Architecture](architecture/plugins.md)
-
----
-
-# Runtime Processes
-
-Documentation for independently executable processes and their operational responsibilities.
-
-- [Worker](architecture/worker.md)
-- [Reconciler](architecture/reconciler.md)
-- [Scheduler](architecture/scheduler.md)
-
-Runtime documentation focuses on process lifecycle and coordination rather than duplicating business logic owned by the Application Layer.
+The Architecture README provides the recommended reading order and navigation into detailed subsystem documentation.
 
 ---
 
 # Architecture Decision Records
 
-Significant architectural decisions are documented as Architecture Decision Records (ADRs).
+[Architecture Decision Records](adr/README.md)
 
-- [ADR Index](adr/README.md)
+ADRs preserve the reasoning behind significant architectural decisions, including:
 
-ADRs capture:
-
-- The problem or architectural question.
-- The chosen approach.
+- The context that motivated a decision.
+- The selected approach.
 - Alternatives considered.
 - Tradeoffs and consequences.
 
-They provide the reasoning behind decisions that may not be apparent from the final implementation alone.
+Architecture documentation describes **what the system is now**.
+
+ADRs explain **why significant architectural choices were made**.
 
 ---
 
 # Project Planning
 
-Documents describing project direction and current implementation priorities.
+[Project Roadmap](roadmap.md)
 
-- [Project Roadmap](roadmap.md)
-- [Current Focus](current-focus.md)
+The roadmap tracks completed engineering milestones, the current development stage, and longer-term direction.
 
-Planning documents describe intended work and should not be treated as documentation of already implemented behavior.
+Planning documentation may describe incomplete or future capabilities and should therefore not be treated as documentation of existing system behavior.
 
 ---
 
-# Documentation Levels
-
-The documentation is intentionally organized at different levels of detail.
+# Documentation Hierarchy
 
 ```text
-README
-   │
-   ▼
-Architecture Overview
-   │
-   ├── Architecture and subsystem documentation
-   │
-   ├── Runtime documentation
-   │
-   └── Data and execution models
-   │
-   ▼
-Architecture Decision Records
+docs/README.md
+    │
+    ├── architecture/
+    │      │
+    │      ├── README.md
+    │      │      Navigation and recommended reading order
+    │      │
+    │      ├── overview.md
+    │      │      Complete high-level architecture
+    │      │
+    │      ├── top-level architecture documents
+    │      │
+    │      └── subsystem folders
+    │             └── README.md + detailed documents
+    │
+    ├── adr/
+    │      └── README.md + individual ADRs
+    │
+    └── roadmap.md
+```
+
+Each level has a distinct responsibility:
+
+- **Documentation README** — routes readers to the appropriate documentation area.
+- **Architecture README** — indexes the architecture documentation and defines its reading order.
+- **Architecture Overview** — explains how the complete system works.
+- **Subsystem READMEs** — explain and navigate individual architectural subsystems.
+- **Detailed architecture documents** — describe specific capabilities and guarantees.
+- **ADRs** — preserve architectural decision history.
+- **Planning documents** — describe completed milestones, active work, and future direction.
+
+Detailed information should live in the document that owns that responsibility rather than being duplicated across documentation levels.

@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This roadmap describes the evolution of the Automation Platform from its architectural foundation into a production-style workflow execution system.
+This roadmap tracks the Automation Platform's evolution from its architectural foundation toward a production-style workflow execution system.
 
-The roadmap is organized around major engineering milestones rather than individual features. Each phase introduces a meaningful system capability while preserving the architectural boundaries established by earlier work.
+Development is organized around **engineering milestones rather than feature count**. Each phase introduces a meaningful capability while preserving the architectural boundaries established by earlier work.
 
-The project prioritizes correctness, reliability, maintainability, and architectural depth over feature count.
+The project prioritizes correctness, reliability, maintainability, recoverability, and architectural depth.
 
 ---
 
@@ -15,36 +15,36 @@ The project prioritizes correctness, reliability, maintainability, and architect
 Development follows several principles:
 
 - Build complete vertical capabilities rather than isolated features.
-- Preserve clear boundaries between Domain, Application, Persistence, Queue, Plugins, and Runtime processes.
-- Introduce infrastructure only when it solves a concrete problem.
+- Preserve clear architectural responsibility boundaries.
+- Introduce infrastructure only when justified by concrete requirements.
 - Design explicitly for concurrency and process failure.
 - Prefer idempotency and recoverability over assumptions of perfect execution.
-- Validate important behavior with real PostgreSQL integration and system tests.
-- Document significant architectural decisions and their tradeoffs.
+- Validate database-dependent guarantees with real PostgreSQL tests.
+- Record significant architectural decisions and tradeoffs through ADRs.
 - Keep the system operational at the end of each major milestone.
 
 ---
 
 # Phase 1 — Architecture and Domain Foundation
 
-**Goal:** Establish the architectural boundaries and core execution model before building infrastructure around them.
+**Goal:** Establish the architectural boundaries and core execution model.
 
-### Milestones
+### Completed
 
 - [x] Repository and Python project structure
 - [x] Development tooling
 - [x] Modular monolith architecture
 - [x] Domain model
-- [x] Workflow and Task definitions
-- [x] Workflow and Task executions
-- [x] Separation of reusable definitions from runtime state
+- [x] Workflow and Task Definitions
+- [x] Workflow and Task Executions
+- [x] Separation of reusable definitions from execution state
 - [x] Dependency-based DAG model
 - [x] Application Layer boundaries
 - [x] Runtime/Application responsibility separation
 - [x] Architecture documentation
 - [x] Architecture Decision Records
 
-**Deliverable:** A documented domain and architecture capable of supporting asynchronous workflow execution without coupling business logic to infrastructure.
+**Outcome:** A documented architecture and domain model capable of supporting asynchronous workflow execution without coupling business logic to infrastructure.
 
 **Status:** ✅ Complete
 
@@ -52,15 +52,15 @@ Development follows several principles:
 
 # Phase 2 — Extensible Workflow Definitions
 
-**Goal:** Make workflows extensible without coupling the workflow engine to individual task or trigger implementations.
+**Goal:** Allow workflow behavior to evolve without coupling orchestration to individual task or trigger implementations.
 
-### Milestones
+### Completed
 
-- [x] Common plugin interface
-- [x] Generic plugin discovery
-- [x] Generic typed plugin registry
-- [x] Task plugin extension point
-- [x] Trigger plugin extension point
+- [x] Common Plugin foundation
+- [x] Generic Plugin discovery
+- [x] Generic typed Plugin registry
+- [x] Task Plugin extension point
+- [x] Trigger Plugin extension point
 - [x] Plugin configuration validation
 - [x] Domain-level `TaskContext`
 - [x] Domain-level `TaskResult`
@@ -68,7 +68,7 @@ Development follows several principles:
 - [x] Prototype task implementations
 - [x] Plugin unit testing infrastructure
 
-**Deliverable:** New task and trigger implementations can be introduced through stable extension points without modifying workflow orchestration.
+**Outcome:** New task and trigger implementations can be introduced through stable extension points without modifying core workflow orchestration.
 
 **Status:** ✅ Complete
 
@@ -76,9 +76,9 @@ Development follows several principles:
 
 # Phase 3 — Durable Workflow Execution
 
-**Goal:** Build the durable execution model and persistence infrastructure required to run workflows safely.
+**Goal:** Persist and progress workflow executions safely.
 
-### Milestones
+### Completed
 
 - [x] PostgreSQL integration
 - [x] SQLAlchemy persistence models
@@ -95,7 +95,7 @@ Development follows several principles:
 - [x] Workflow failure and cancellation behavior
 - [x] PostgreSQL integration tests
 
-**Deliverable:** Workflow execution state can be created, reconstructed, and advanced durably through explicit concurrency-safe transitions.
+**Outcome:** Workflow state can be created, reconstructed, and advanced through explicit concurrency-safe durable transitions.
 
 **Status:** ✅ Complete
 
@@ -103,12 +103,12 @@ Development follows several principles:
 
 # Phase 4 — Concurrent Queue-Driven Execution
 
-**Goal:** Distribute runnable tasks safely across independent background workers.
+**Goal:** Distribute runnable tasks safely across concurrent Workers.
 
-### Milestones
+### Completed
 
 - [x] Execution Queue abstraction
-- [x] PostgreSQL-backed queue
+- [x] PostgreSQL-backed Queue
 - [x] Idempotent task enqueueing
 - [x] FIFO task claiming
 - [x] `FOR UPDATE SKIP LOCKED` concurrency
@@ -118,10 +118,10 @@ Development follows several principles:
 - [x] Worker heartbeats
 - [x] Safe Queue release
 - [x] Atomic Queue finish and child enqueueing
-- [x] Multiple-worker concurrency support
+- [x] Multiple-Worker concurrency support
 - [x] Queue integration and concurrency tests
 
-**Deliverable:** Multiple workers can safely claim and process independent tasks concurrently while abandoned work remains recoverable.
+**Outcome:** Multiple Workers can safely process independent tasks concurrently while abandoned Queue work remains recoverable.
 
 **Status:** ✅ Complete
 
@@ -129,32 +129,31 @@ Development follows several principles:
 
 # Phase 5 — Workflow Engine and Worker Runtime
 
-**Goal:** Connect the Domain, Application, Persistence, Plugins, and Queue into a complete asynchronous execution system.
+**Goal:** Connect Domain, Application, Persistence, Plugins, and Queue into a complete asynchronous execution path.
 
-### Milestones
+### Completed
 
 - [x] Workflow start orchestration
 - [x] Workflow Definition compilation
 - [x] Root task scheduling
 - [x] Task Processing Application service
-- [x] Task plugin execution
+- [x] Task Plugin execution
 - [x] Task output propagation
 - [x] Fan-out execution
 - [x] Fan-in execution
 - [x] Parallel sibling execution
 - [x] Retry handling
 - [x] Terminal workflow failure
-- [x] Worker polling runtime
+- [x] Worker polling Runtime
 - [x] Per-claim heartbeat lifecycle
 - [x] Untrusted-claim handling
 - [x] Graceful Worker shutdown
-- [x] Worker bootstrap/composition root
-- [x] Worker executable entry point
+- [x] Worker composition root and executable entry point
 - [x] Worker unit tests
 - [x] End-to-end PostgreSQL workflow tests
 - [x] Multiple-Worker system tests
 
-**Deliverable:** DAG workflows execute asynchronously end-to-end through concurrent background Workers.
+**Outcome:** DAG workflows execute asynchronously end-to-end through concurrent background Workers.
 
 **Status:** ✅ Complete
 
@@ -162,30 +161,30 @@ Development follows several principles:
 
 # Phase 6 — Reliability and Runtime Infrastructure
 
-**Goal:** Make workflow execution resilient to process failures and establish shared production-style runtime infrastructure.
+**Goal:** Recover from partial failures and establish shared production-style Runtime infrastructure.
 
-### Milestones
+### Completed
 
-- [x] Persistence/Queue failure-window analysis
+- [x] Persistence → Queue failure-window analysis
 - [x] Reconciliation strategy
 - [x] Runnable-task recovery query
-- [x] Reconciler runtime
+- [x] Reconciler Runtime
 - [x] Idempotent recovery of stranded work
 - [x] Reconciler failure recovery loop
 - [x] Reconciler graceful shutdown
-- [x] Reconciler bootstrap and executable entry point
+- [x] Reconciler composition root and executable entry point
 - [x] Stranded-work system tests
 - [x] Environment-based configuration
-- [x] Explicit Settings dependency
+- [x] Explicit immutable Settings
 - [x] Configuration validation
-- [x] Process-wide logging infrastructure
+- [x] Process-wide logging
 - [x] OS signal handling
 - [x] Shared database infrastructure
 - [x] GitHub Actions CI
 - [x] Ruff linting and formatting
 - [x] Runtime architecture documentation
 
-**Deliverable:** The execution engine can recover runnable work stranded by partial failures and operate through independently configured long-running processes.
+**Outcome:** The execution engine can recover runnable work stranded by partial failures and operate through independently configured long-running processes.
 
 **Status:** ✅ Complete
 
@@ -193,26 +192,26 @@ Development follows several principles:
 
 # Phase 7 — Durable Scheduling
 
-**Goal:** Allow workflows to begin automatically from durable trigger state.
+**Goal:** Start workflows automatically from durable chronological trigger state.
 
-### Milestones
+### Completed
 
-- [ ] Chronological trigger abstraction
-- [ ] Initial interval/scheduled trigger implementation
-- [ ] Durable chronological trigger state
-- [ ] Chronological trigger persistence
-- [ ] Trigger initialization during Workflow Definition creation
-- [ ] Concurrency-safe due-trigger claiming
-- [ ] Atomic schedule advancement and Workflow Execution creation
-- [ ] Scheduler Application services
-- [ ] Scheduler runtime
-- [ ] Scheduler configuration and bootstrap
-- [ ] Multiple-Scheduler concurrency tests
-- [ ] End-to-end scheduled workflow tests
+- [x] Specialized chronological trigger abstraction
+- [x] Interval trigger implementation
+- [x] Durable chronological trigger state
+- [x] Chronological trigger persistence
+- [x] Trigger-state initialization during Workflow Definition creation
+- [x] Concurrency-safe due-occurrence claiming
+- [x] Atomic schedule advancement and Workflow Execution creation
+- [x] Chronological trigger Application service
+- [x] Scheduler Runtime
+- [x] Scheduler configuration and composition root
+- [x] Multiple-Scheduler concurrency tests
+- [x] End-to-end scheduled workflow tests
 
-**Deliverable:** Time-based workflows execute automatically while multiple Scheduler processes can safely evaluate due triggers without creating duplicate executions.
+**Outcome:** Chronological workflows execute automatically while multiple Scheduler processes safely coordinate due occurrences without duplicate committed executions.
 
-**Status:** 🚧 In Progress
+**Status:** ✅ Complete
 
 ---
 
@@ -220,20 +219,20 @@ Development follows several principles:
 
 **Goal:** Expose workflow management and execution capabilities through an external HTTP interface.
 
-### Milestones
+### Planned
 
 - [ ] FastAPI application
-- [ ] API runtime/bootstrap
+- [ ] API Runtime and composition root
 - [ ] Workflow Definition endpoints
-- [ ] Workflow execution endpoints
-- [ ] Execution status/history endpoints
+- [ ] Workflow Execution endpoints
+- [ ] Execution status and history endpoints
 - [ ] Request and response validation
 - [ ] Application-layer error translation
 - [ ] OpenAPI documentation
 - [ ] API integration tests
-- [ ] Health/readiness endpoints
+- [ ] Health and readiness endpoints
 
-**Deliverable:** Workflows can be defined, started, inspected, and managed through a documented REST API.
+**Outcome:** Workflows can be defined, started, inspected, and managed through a documented REST API.
 
 **Status:** ⏳ Planned
 
@@ -241,9 +240,9 @@ Development follows several principles:
 
 # Phase 9 — Containerized Deployment
 
-**Goal:** Package the independently executable runtime processes into a reproducible local deployment.
+**Goal:** Package the independently executable Runtime processes into a reproducible local deployment.
 
-### Milestones
+### Planned
 
 - [ ] Application Docker image
 - [ ] Docker Compose environment
@@ -257,7 +256,7 @@ Development follows several principles:
 - [ ] Graceful container shutdown
 - [ ] End-to-end containerized validation
 
-**Deliverable:** The complete platform can be started reproducibly as a multi-process system using Docker Compose.
+**Outcome:** The complete platform can be started reproducibly as a multi-process system using Docker Compose.
 
 **Status:** ⏳ Planned
 
@@ -265,24 +264,24 @@ Development follows several principles:
 
 # Phase 10 — Production Hardening
 
-**Goal:** Add operational capabilities justified by the completed prototype and real runtime behavior.
+**Goal:** Add operational capabilities justified by completed system behavior and real runtime requirements.
 
 Potential improvements include:
 
-- Structured logging
-- Metrics and tracing
-- Improved health and readiness reporting
-- Queue depth and execution metrics
-- Scheduler observability
-- Database migrations
-- Workflow versioning
-- Execution retention policies
-- More sophisticated retry policies
-- Priority scheduling
-- Rate limiting
-- Secrets management
+- Structured logging.
+- Metrics and distributed tracing.
+- Improved health and readiness reporting.
+- Queue depth and execution metrics.
+- Scheduler observability.
+- Database migrations.
+- Workflow versioning.
+- Execution retention policies.
+- More sophisticated retry policies.
+- Priority scheduling.
+- Rate limiting.
+- Secrets management.
 
-These features will be introduced selectively rather than treated as requirements for the initial platform.
+These capabilities will be introduced selectively rather than treated as requirements for the initial platform.
 
 **Status:** 🔮 Future
 
@@ -290,18 +289,18 @@ These features will be introduced selectively rather than treated as requirement
 
 # Phase 11 — Distributed Infrastructure Evolution
 
-**Goal:** Explore infrastructure changes only where the existing abstractions provide a meaningful reason to do so.
+**Goal:** Introduce distributed infrastructure only where concrete requirements justify replacing or extending existing abstractions.
 
 Potential capabilities include:
 
-- RabbitMQ-backed Execution Queue
-- Distributed Worker deployment
-- Redis-backed coordination or caching
-- Transactional Outbox for stronger Persistence-to-Queue delivery guarantees
-- Horizontal Scheduler scaling
-- Larger-scale reconciliation
-- Queue prioritization
-- Dead-letter handling
+- RabbitMQ-backed Execution Queue.
+- Distributed Worker deployment.
+- Redis-backed coordination or caching.
+- Transactional Outbox for stronger Persistence → Queue delivery guarantees.
+- Larger-scale Scheduler deployment.
+- Larger-scale reconciliation.
+- Queue prioritization.
+- Dead-letter handling.
 
 The existing architecture intentionally leaves room for these changes without requiring them for the current system.
 
@@ -309,15 +308,21 @@ The existing architecture intentionally leaves room for these changes without re
 
 ---
 
-# Current Architecture Milestone
+# Current State
 
-The platform has progressed beyond a basic workflow-engine prototype.
-
-The implemented execution path currently supports:
+With durable scheduling complete, the platform supports:
 
 ```text
 Workflow Definition
         │
+        ├──── explicit start
+        │
+        └──── chronological trigger
+                    │
+                    ▼
+             Scheduler Runtime
+                    │
+        ┌───────────┘
         ▼
 Compiled Workflow Execution
         │
@@ -339,42 +344,33 @@ Atomic Persistence Transitions
         ├────► Newly Runnable Tasks
         │
         └────► Workflow Completion
-
-
-Recovery:
-
-Durably Runnable Task
-        │
-        X Missing Queue Propagation
-        │
-        ▼
-    Reconciler
-        │
-        ▼
-Idempotent Re-enqueue
 ```
 
-The current development focus is adding **durable chronological scheduling** on top of this execution foundation.
+Runnable work lost during Persistence → Queue propagation is recovered through the Reconciler.
+
+The next major milestone is the **REST API**, which will expose the existing Application capabilities through an external HTTP interface.
 
 ---
 
-# Long-Term Vision
+# Long-Term Direction
 
-The completed platform should demonstrate the engineering foundations of a production workflow system:
+The project aims to demonstrate the engineering foundations of a production workflow system while remaining deliberately smaller than a commercial workflow platform.
 
-- Asynchronous DAG execution
-- Concurrent background processing
-- Durable workflow state
-- Concurrency-safe database transitions
-- Failure detection and recovery
-- Extensible task and trigger implementations
-- Independent long-running runtime processes
-- Automated scheduling
-- REST-based management
-- Reproducible containerized deployment
-- Layered automated testing
-- CI/CD
-- Operational observability
-- Architecture documentation and explicit design reasoning
+The target capabilities include:
 
-The project is intended to remain deliberately smaller than a commercial workflow platform while implementing its chosen capabilities with strong correctness guarantees and clearly defensible engineering tradeoffs.
+- Asynchronous DAG execution.
+- Concurrent background processing.
+- Durable workflow state.
+- Concurrency-safe state transitions.
+- Failure detection and recovery.
+- Extensible task and trigger implementations.
+- Independent Runtime processes.
+- Automated scheduling.
+- REST-based management.
+- Reproducible containerized deployment.
+- Layered automated testing.
+- CI/CD.
+- Operational observability.
+- Explicit architecture documentation and decision records.
+
+Future capabilities should continue to be introduced only when they provide concrete value while preserving clearly defensible architectural boundaries and correctness guarantees.

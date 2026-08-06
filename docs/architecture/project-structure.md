@@ -2,249 +2,595 @@
 
 ## Purpose
 
-This document describes the architectural organization of the Automation Platform.
+The Automation Platform is organized as a **modular monolith with multiple independently executable Runtime processes**.
 
-Rather than documenting the exact directory tree, this document explains the responsibility of each major package and the dependency relationships between them.
+All processes share the same Domain, Application, Persistence, Plugin, Queue, Configuration, Infrastructure, and Observability codebase while exposing different entry points into the platform.
 
-The goal is to make it clear where new code belongs as the project evolves.
+This document explains:
 
----
+- The major architectural packages.
+- Their primary responsibilities.
+- Dependency boundaries between them.
+- Where new functionality should normally belong.
 
-# Architectural Layers
+Detailed behavior belongs in each subsystem's architecture documentation rather than here.
 
-The project is organized into several major architectural areas.
+## Architectural Organization
 
 ```mermaid
 flowchart TD
 
     Runtime["Runtime Processes"]
+    Application["Application"]
 
-    Application["Application Layer"]
-
+    Plugins["Plugins"]
+    Persistence["Persistence"]
+    Queue["Execution Queue"]
     Domain["Domain"]
 
-    Persistence["Persistence"]
+    Config["Configuration"]
+    Infrastructure["Infrastructure"]
+    Observability["Observability"]
 
-    Database[(PostgreSQL)]
+    DB[(PostgreSQL)]
 
     Runtime --> Application
+    Runtime --> Queue
+
     Application --> Domain
+    Application --> Plugins
     Application --> Persistence
-    Persistence --> Database
+    Application --> Queue
+
+    Persistence --> Domain
+    Persistence --> Infrastructure
+    Persistence --> DB
+
+    Queue --> Infrastructure
+    Queue --> DB
+
+    Runtime --> Observability
+    Runtime --> Config
+    Runtime --> Infrastructure
+
+    Config --> Infrastructure
 ```
 
-Dependencies should generally flow downward.
+Not every Runtime depends directly on every subsystem.
 
-Lower layers should never depend on higher layers.
+Each executable process has its own bootstrap/composition root, which constructs only the dependencies that process requires.
 
----
+## Package Responsibilities
 
-# Runtime Processes
+### Runtime
 
-The runtime layer contains long-running processes that react to external events.
+`runtime/` contains independently executable processes that drive Application capabilities.
 
-Examples include:
+Current processes include:
 
-- API
-- Scheduler
-- Worker
+```text
+runtime/
+├── worker/
+├── reconciler/
+└── scheduler/
+```
 
-Responsibilities:
+An API Runtime can provide the user-facing HTTP entry point.
 
-- Receive external input.
-- Invoke application capabilities.
-- Manage process lifecycle.
+Runtime owns:
 
-Runtime processes intentionally contain little or no business logic.
+- Process lifecycle.
+- Polling or external input.
+- Graceful shutdown and signal handling.
+- Invoking Application capabilities.
+- Runtime-level operational logging.
 
----
+Runtime should remain thin and contain little business logic.
 
-# Application Layer
+Each Runtime generally contains:
 
-The application layer implements the business capabilities of the platform.
+```text
+runtime behavior
++
+bootstrap / composition root
+```
 
-Examples include:
+### Application
 
-- Starting workflows
-- Processing task executions
-- Advancing workflow state
-- Queueing runnable work
-- Completing workflow executions
-
-Responsibilities:
-
-- Workflow orchestration
-- Business rules
-- Coordination between components
-
-The application layer is independent of HTTP, workers, and scheduling.
-
----
-
-# Domain
-
-The domain layer contains the core business concepts of the platform.
+`application/` contains platform use cases and orchestration.
 
 Examples include:
 
-- Workflow Definition
-- Workflow Execution
-- Task Definition
-- Task Execution
+```text
+application/
+├── workflow_definitions/
+├── workflow_start/
+├── task_processing/
+├── trigger_initialization/
+└── chronological_triggers/
+```
 
-Responsibilities:
+Application coordinates capabilities such as:
 
-- Represent business entities
-- Model execution state
-- Express business relationships
+- Workflow Definition creation and validation.
+- Workflow Execution creation.
+- Compilation of definitions into execution state.
+- Task processing and workflow progression.
+- Retries and failures.
+- Trigger initialization and processing.
+- Persistence, Plugin, and Queue interactions.
 
-Domain objects should not contain infrastructure concerns.
+Application services define meaningful transaction boundaries and remain independent of the Runtime that invokes them.
 
----
+For example, workflow start can be reused by:
 
-# Persistence
+```text
+API
+Scheduler
+future trigger mechanisms
+```
 
-The persistence layer provides access to durable storage.
+without duplicating workflow-start behavior.
 
-Responsibilities:
+### Domain
 
-- Load domain data
-- Save domain data
-- Query execution state
-- Isolate database implementation details
+`domain/` contains the platform's core business concepts.
 
-Business logic should not directly access the database.
+Conceptually:
 
----
+```text
+domain/
+├── common/
+├── execution_runtime/
+├── workflow_definitions/
+└── workflow_executions/
+```
 
-# Task Plugins
+Important concepts include:
 
-Task plugins provide executable units of work.
+- `WorkflowDefinition`
+- `TaskDefinition`
+- `TriggerDefinition`
+- `WorkflowExecution`
+- `TaskExecution`
+- `TaskContext`
+- `TaskResult`
+- `TaskOutput`
+- `WorkflowStatus`
+- `TaskStatus`
 
-Responsibilities:
+Domain objects represent business concepts and lightweight behavior derived from their own state.
 
-- Execute business actions
-- Receive task configuration
-- Return execution results
+The Domain does not access PostgreSQL, communicate with the Queue, host triggers, start processes, or perform Application orchestration.
 
-Task implementations never determine workflow progression.
+Not every persisted table requires a Domain object. Infrastructure-specific durable state may remain entirely within Persistence when it is not a core business concept.
 
----
+### Persistence
 
-# Trigger Plugins
+`persistence/` owns durable application state and database-specific behavior.
 
-Trigger plugins determine when workflows should begin.
+It contains:
 
-Responsibilities:
+- SQLAlchemy persistence models.
+- Repositories.
+- Domain/persistence mapping where appropriate.
+- Unit of Work infrastructure.
+- Database queries and transactions.
+- PostgreSQL-specific concurrency behavior.
 
-- Evaluate trigger conditions
-- Answer if workflow is ready to begin
+Application accesses Persistence through repositories and the Unit of Work:
 
-Trigger implementations never execute workflows directly.
+```text
+Application
+    ↓
+Unit of Work
+    ↓
+Repositories
+    ↓
+SQLAlchemy
+    ↓
+PostgreSQL
+```
 
----
+Database-specific behavior remains inside Persistence.
 
-# Queue
+For example, chronological scheduling may use:
 
-The execution queue distributes runnable Task Executions to workers.
+```sql
+FOR UPDATE SKIP LOCKED
+```
 
-Responsibilities:
+without exposing PostgreSQL locking behavior to Application or Scheduler code.
 
-- Store runnable work
-- Allow workers to claim work
-- Decouple orchestration from execution
+### Plugins
 
-The queue is treated as an architectural abstraction rather than a specific technology.
+`plugins/` contains extensible platform behavior.
 
----
+```text
+plugins/
+├── tasks/
+└── triggers/
+```
 
-# Configuration
+Shared Plugin infrastructure provides contracts, configuration validation, discovery, registration, and lookup by stable plugin type.
 
-Configuration centralizes application settings.
+#### Task Plugins
 
-Examples include:
+Task Plugins:
 
-- Database connection
-- Queue configuration
-- Logging configuration
-- Runtime settings
+- Validate plugin-specific configuration.
+- Receive `TaskContext`.
+- Perform task-specific behavior.
+- Return `TaskResult`.
 
-Configuration should remain separate from business logic.
+They do not own workflow progression, dependency changes, Queue claims, durable commits, or Worker behavior.
 
----
+#### Trigger Plugins
 
-# Logging
+Trigger Plugins define behavior associated with when workflows begin.
 
-Logging provides structured visibility into system behavior.
+Mechanisms are represented through interfaces rather than a generic readiness contract:
 
-Responsibilities include:
+```text
+Trigger
+│
+├── ChronologicalTrigger
+│   ├── IntervalTrigger
+│   ├── CronTrigger       [future]
+│   └── OneTimeTrigger    [future]
+│
+├── WebhookTrigger        [future]
+└── FilesystemTrigger     [future]
+```
 
-- Execution tracing
-- Error reporting
-- Operational diagnostics
-- Audit information
+The class hierarchy represents mechanism capabilities; there is no separate trigger-mechanism enum duplicating it.
 
-Logging should remain consistent across all runtime processes.
+For example, chronological plugins calculate:
 
----
+```python
+next_occurrence(
+    configuration,
+    after,
+) -> datetime | None
+```
 
-# Dependency Rules
+Application, Persistence, and Runtime host that behavior.
 
-The project follows several dependency rules.
+### Execution Queue
 
-Allowed:
+The Execution Queue distributes runnable Task Execution work to Workers.
+
+It owns:
+
+- Idempotent publication.
+- Claims and claim tokens.
+- Renewable leases and heartbeats.
+- Release of retryable work.
+- Completion of claimed work.
+- Atomic publication of newly runnable task identifiers during Queue completion.
+
+The Queue owns delivery state, not durable workflow state:
+
+```text
+Persistence
+    = durable execution truth
+
+Execution Queue
+    = runnable-work delivery state
+```
+
+The current implementation uses PostgreSQL, but consumers depend on the Queue abstraction rather than its concrete implementation.
+
+Queue and Persistence intentionally remain separate transactional boundaries.
+
+### Configuration
+
+Configuration defines how external runtime values enter the application:
+
+```text
+Environment
+    ↓
+load_settings()
+    ↓
+immutable Settings
+    ↓
+Runtime Bootstrap
+```
+
+It owns parsing, defaults, validation, and typed Settings.
+
+Settings are explicit dependencies. Runtime and Application components do not independently read environment variables.
+
+### Infrastructure
+
+`infrastructure/` constructs technical resources genuinely shared by multiple subsystems.
+
+Current shared resources include:
+
+```text
+Settings
+SQLAlchemy Engine
+SQLAlchemy SessionFactory
+Declarative Base
+```
+
+Persistence and the PostgreSQL Queue may share database infrastructure while remaining architecturally independent.
+
+Infrastructure does not contain workflow, Queue, or Runtime behavior.
+
+### Observability
+
+`observability/` owns process-wide operational visibility.
+
+The current implementation provides application logging:
+
+```text
+Settings.log_level
+        ↓
+configure_logging()
+        ↓
+Python logging hierarchy
+        ↓
+module-level loggers
+```
+
+Logging focuses on meaningful operational events and failures rather than every method invocation.
+
+Observability describes system behavior but is never a source of truth for system correctness.
+
+Metrics and tracing may extend the package when concrete requirements justify them.
+
+## Runtime Roles
+
+Some responsibilities are easier to understand as executable processes.
+
+### Worker
+
+The Worker coordinates the Execution Queue with task-processing Application behavior:
+
+```text
+Execution Queue
+      ↓
+    Worker
+      ↓
+TaskProcessingService
+```
+
+It claims work, maintains the Queue lease, delegates processing, and releases or finishes the claim according to the durable Application outcome.
+
+If heartbeat behavior makes ownership uncertain, the claim becomes untrusted and the Worker avoids unsafe Queue disposition.
+
+### Reconciler
+
+The Reconciler repairs the consistency boundary between Persistence and the Execution Queue.
+
+A task is durably runnable when:
+
+```text
+status = PENDING
+AND
+remaining_dependencies = 0
+```
+
+The Reconciler periodically republishes all durably runnable Task Execution identifiers:
+
+```text
+Persistence
+    ↓
+runnable task IDs
+    ↓
+Execution Queue
+    ↓
+idempotent enqueue
+```
+
+It does not calculate which entries are missing from Queue state.
+
+Idempotent publication makes that unnecessary.
+
+### Scheduler
+
+The Scheduler hosts chronological trigger processing:
+
+```text
+Scheduler
+    ↓
+ChronologicalTriggerService.process_next_due()
+```
+
+It owns polling, lifecycle, graceful shutdown, and Runtime logging.
+
+Application and Persistence own trigger resolution, scheduling transitions, Workflow Execution creation, and database locking.
+
+Multiple Schedulers may operate concurrently using PostgreSQL:
+
+```sql
+FOR UPDATE SKIP LOCKED
+```
+
+rather than Scheduler leases, heartbeats, leader election, or global locks.
+
+## Bootstrap and Composition
+
+Each executable Runtime owns a bootstrap module that acts as its **composition root**.
+
+A typical startup sequence is:
+
+```text
+load Settings
+    ↓
+configure logging
+    ↓
+build Infrastructure
+    ↓
+construct Persistence / Queue
+    ↓
+construct registries
+    ↓
+construct Application services
+    ↓
+construct Runtime
+    ↓
+register signal handlers
+    ↓
+run
+```
+
+Dependency construction remains at this boundary.
+
+Runtime classes receive already-constructed dependencies rather than building them internally.
+
+Current executable entry points include:
+
+```text
+automation-worker
+automation-reconciler
+automation-scheduler
+```
+
+Additional processes, including an API Runtime, can follow the same composition model.
+
+## Dependency Rules
+
+The architecture favors explicit responsibility boundaries rather than layering for its own sake.
+
+### Domain remains infrastructure-independent
+
+```text
+Domain
+    ✕ PostgreSQL
+    ✕ SQLAlchemy
+    ✕ HTTP
+    ✕ Queue implementation
+    ✕ Runtime
+```
+
+Infrastructure may depend on Domain concepts where appropriate. Domain does not depend on infrastructure.
+
+### Runtime delegates business behavior
 
 ```text
 Runtime
     ↓
 Application
+```
+
+Runtime processes drive Application capabilities rather than reimplementing their use cases.
+
+### Application coordinates abstractions
+
+```text
+             Application
+          /      |       \
+Persistence   Plugins    Queue
+```
+
+Application may coordinate these components when required by a business capability.
+
+### Persistence owns database behavior
+
+```text
+Application
     ↓
+Persistence abstraction
+    ↓
+SQLAlchemy / PostgreSQL
+```
+
+SQLAlchemy and PostgreSQL-specific behavior do not leak into Runtime or Application orchestration.
+
+### Plugins remain isolated from orchestration
+
+```text
+Application
+    ↓
+Plugin
+
+Plugin
+    ✕ workflow progression
+    ✕ Queue ownership
+    ✕ Persistence orchestration
+```
+
+Plugins implement extensible behavior while the platform surrounds them with workflow semantics.
+
+### Queue and Persistence remain distinct
+
+The PostgreSQL implementations may share database Infrastructure, but neither subsystem owns or depends on the other's abstraction.
+
+```text
 Persistence
-    ↓
-Database
+    durable state
+
+Execution Queue
+    temporary delivery state
 ```
+
+Their interaction is coordinated by higher-level components.
+
+## Responsibility Guide
+
+When deciding where new code belongs, ask **what responsibility it owns**.
+
+| Area                | Primary Question                                                              |
+| ------------------- | ----------------------------------------------------------------------------- |
+| **Runtime**         | How is an Application capability driven as a process or external entry point? |
+| **Application**     | What use case or orchestration should occur?                                  |
+| **Domain**          | What business concepts and state exist?                                       |
+| **Persistence**     | How is durable state stored, queried, and transactionally coordinated?        |
+| **Plugins**         | What implementation-specific behavior should be extensible?                   |
+| **Execution Queue** | How is runnable work delivered safely to Workers?                             |
+| **Configuration**   | How does external runtime configuration enter the process?                    |
+| **Infrastructure**  | What shared technical resources must be constructed?                          |
+| **Observability**   | How is system behavior made operationally visible?                            |
+| **Bootstrap**       | How are process dependencies composed and started?                            |
+
+## Adding New Functionality
+
+New functionality should normally extend an existing responsibility rather than introduce a new architectural layer.
 
 ```text
-Application
-    ↓
-Domain
+New task type
+    → Task Plugin
+
+New chronological schedule type
+    → ChronologicalTrigger implementation
+
+New trigger mechanism
+    → Trigger mechanism interface
+      + mechanism-specific hosting infrastructure if required
+
+New workflow use case
+    → Application capability
+
+New database query
+    → Persistence repository
+
+New executable background process
+    → Runtime + bootstrap
+
+New operational metric
+    → Observability
 ```
 
-```text
-Application
-    ↓
-Task Plugins
-```
+A new abstraction should be introduced only when it represents a meaningful responsibility rather than merely eliminating small amounts of duplicated code.
 
-```text
-Application
-    ↓
-Trigger Plugins
-```
+## Design Philosophy
 
-Avoid:
+The package structure follows one broad rule:
 
-- Persistence depending on Runtime.
-- Domain depending on infrastructure.
-- Plugins directly modifying orchestration.
-- Runtime processes implementing business rules.
+> **Keep business concepts independent, put orchestration in explicit Application capabilities, isolate infrastructure behind abstractions, and keep Runtime processes thin.**
 
----
+The architecture intentionally avoids unnecessary generalization.
 
-# Design Philosophy
+For example:
 
-Each package should answer a single question.
+- No shared `BaseRuntime` merely because Runtimes have similar lifecycle code.
+- No generic trigger readiness interface hiding fundamentally different trigger mechanisms.
+- No Scheduler lease system when short PostgreSQL row locks provide the required concurrency guarantee.
+- No Domain object merely because a supporting database table exists.
+- No thin Application service whose only purpose is forwarding a repository call.
+- No globally accessible Settings object.
+- No coupling between Persistence and the current PostgreSQL Queue implementation.
 
-| Package | Question |
-|----------|----------|
-| Runtime | *When should something happen?* |
-| Application | *What business capability should occur?* |
-| Domain | *What business concepts exist?* |
-| Persistence | *How is state stored?* |
-| Queue | *How is work distributed?* |
-| Tasks | *What work can be performed?* |
-| Triggers | *When should workflows begin?* |
-| Configuration | *How is the system configured?* |
-| Logging | *How is system behavior recorded?* |
-
-When adding new functionality, prefer extending an existing responsibility rather than introducing a new architectural layer.
+The project should continue evolving around **cohesive responsibilities and explicit boundaries**, not around maximizing the number of layers or abstractions.

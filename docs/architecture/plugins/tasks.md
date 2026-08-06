@@ -4,17 +4,15 @@
 
 Task plugins implement the work performed by workflow tasks.
 
-The platform determines when a task executes, constructs its input
-context, invokes the resolved plugin, and interprets the result. The
-plugin performs only its configured task behavior.
+The platform decides when a task executes, constructs its input context, invokes the resolved plugin, and interprets the result. The plugin performs only its configured task behavior.
 
-------------------------------------------------------------------------
+---
 
-## Interface
+## Contract
 
-A task plugin receives a `TaskContext` and returns a `TaskResult`.
+Task plugins inherit the shared `plugin_type` and `validate_configuration(...)` contract, then receive a `TaskContext` and return a `TaskResult`:
 
-``` text
+```text
 TaskContext
     │
     ▼
@@ -24,121 +22,86 @@ Task Plugin
 TaskResult
 ```
 
-Task plugins also inherit the shared plugin contract: `plugin_type` and
-`validate_configuration(...)`.
+### `TaskContext`
 
-------------------------------------------------------------------------
+Application constructs `TaskContext` immediately before execution:
 
-## TaskContext
-
-The Application Layer constructs `TaskContext` immediately before plugin
-execution.
-
-It contains:
-
--   Task configuration.
--   Outputs from completed parent tasks.
-
-``` text
+```text
 TaskContext
 ├── configuration
 └── inputs
     └── parent task key -> TaskOutput
 ```
 
-Parent outputs are keyed by logical task key rather than persistence
-identifiers. Task implementations therefore do not need to understand
-execution IDs or database structure.
+It contains the task configuration and outputs from completed parent tasks. Parent outputs are keyed by logical task key rather than persistence identifiers, so plugins do not need to understand execution IDs or database structure.
 
-`TaskContext` defines the information a task plugin is allowed to
-consume from the workflow execution.
+`TaskContext` defines the information a plugin is allowed to consume from the workflow execution.
 
-------------------------------------------------------------------------
-
-## TaskResult
+### `TaskResult`
 
 A task plugin returns:
 
-``` text
+```text
 TaskResult
 ├── succeeded: bool
 ├── output: TaskOutput
 └── message: str | None
 ```
 
-`TaskResult` deliberately does not return a workflow-engine
-`TaskStatus`.
+`TaskResult` deliberately does not expose workflow-engine `TaskStatus` values such as `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELLED`. The plugin reports the outcome of its work; Application and Persistence determine the resulting execution-state transition.
 
-Statuses such as `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, and
-`CANCELLED` describe platform execution state. The plugin reports the
-outcome of its own work; Application and Persistence determine the
-resulting state transition.
+---
 
-------------------------------------------------------------------------
-
-## What Task Plugins Do Not Own
+## Platform-Owned Behavior
 
 Task plugins do not:
 
--   Change persisted task execution state.
--   Complete workflow executions.
--   Update dependency counters.
--   Decide which child tasks become runnable.
--   Enqueue tasks.
--   Claim queue work.
--   Decide whether another retry is available.
+- Change persisted task execution state or complete workflow executions.
+- Update dependency counters or decide which child tasks become runnable.
+- Enqueue tasks or claim queue work.
+- Decide whether another retry is available.
 
 Those decisions belong to the platform.
 
-------------------------------------------------------------------------
+A task plugin therefore describes **what work to perform and its outcome**, not how that outcome advances the workflow. Retry eligibility, dependency progression, execution status, workflow completion, and subsequent task scheduling remain platform decisions.
+
+---
 
 ## Failure Semantics
 
-### Expected task failure
+### Expected failure
 
-An ordinary unsuccessful outcome is returned explicitly:
+An ordinary unsuccessful outcome is explicit:
 
-``` text
+```text
 TaskResult
     succeeded = false
     message = failure explanation
 ```
 
-Application interprets the result and applies the platform's retry and
-workflow-state rules.
+Application interprets the result and applies platform retry and workflow-state rules.
 
 ### Unexpected exception
 
-Unexpected exceptions are allowed to propagate. Examples include
-programming errors or failures that prevent the plugin from producing a
-meaningful `TaskResult`.
+Unexpected exceptions propagate. Examples include programming errors or failures that prevent the plugin from producing a meaningful `TaskResult`.
 
-Application does not automatically convert arbitrary exceptions into
-ordinary unsuccessful task results. This prevents infrastructure or
-programming failures from silently consuming normal workflow retry
-attempts.
+Application does not automatically convert arbitrary exceptions into ordinary unsuccessful results; otherwise infrastructure or programming failures could silently consume normal workflow retry attempts. Runtime recovery and queue lease behavior handle interrupted processing according to the execution architecture.
 
-Runtime recovery and queue lease behavior handle interrupted processing
-according to the execution architecture.
-
-------------------------------------------------------------------------
+---
 
 ## Side Effects and Idempotency
 
-Task plugins are not required to be pure. They may call external APIs,
-write files, send messages, transform data, or invoke external services.
+Task plugins need not be pure. They may call external APIs, write files, send messages, transform data, or invoke external services.
 
-Recovery can cause a logical task to be physically executed again. Where
-practical, externally visible operations should therefore be idempotent
-or use idempotency support from the external system.
+Recovery can cause a logical task to execute physically more than once. Where practical, externally visible operations should therefore be idempotent or use idempotency support from the external system.
 
-The plugin interface does not promise exactly-once physical execution.
+The plugin interface does **not** promise exactly-once physical execution.
 
-------------------------------------------------------------------------
+---
 
 ## Lifecycle
 
-``` text
+```text
 TaskProcessingService
         │
         ├── load execution context
@@ -159,19 +122,10 @@ Application interprets result
 
 The plugin does not persist or orchestrate its own execution state.
 
-------------------------------------------------------------------------
+---
 
 ## Testing
 
-Concrete task plugin tests should cover:
+Concrete task plugin tests should cover valid and invalid configuration, successful execution, expected unsuccessful results, plugin-specific edge cases, and exceptional behavior where relevant.
 
--   Valid and invalid configuration.
--   Successful execution.
--   Expected unsuccessful results.
--   Plugin-specific edge cases.
--   Exceptional behavior where relevant.
-
-Application integration tests should separately verify unknown-plugin
-rejection, configuration validation during definition creation, correct
-plugin resolution, `TaskContext` construction, `TaskResult`
-interpretation, and propagation of unexpected exceptions.
+Application integration tests should separately verify unknown-plugin rejection, validation during definition creation, correct plugin resolution, `TaskContext` construction, `TaskResult` interpretation, and propagation of unexpected exceptions.

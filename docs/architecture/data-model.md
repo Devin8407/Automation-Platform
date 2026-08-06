@@ -2,23 +2,15 @@
 
 ## Purpose
 
-This document describes the conceptual data model of the Automation Platform.
+This document describes the conceptual relationships between the Automation Platform's core workflow concepts.
 
-The focus is on the relationships between business concepts rather than database implementation details.
+It sits between:
 
-Database schemas and ORM mappings are intentionally documented separately.
+- [Domain Architecture](domain.md), which defines the business objects and their responsibilities.
+- [Execution Model](execution-model.md), which explains how definitions become and progress through runtime executions.
+- [Database Schema](persistence/database-schema.md), which describes their physical persistence representation.
 
----
-
-# Design Principles
-
-The data model is designed around several principles.
-
-- Separate immutable definitions from mutable execution state.
-- Represent reusable workflow templates independently from runtime executions.
-- Preserve complete execution history.
-- Support multiple concurrent executions of the same workflow.
-- Model execution independently from storage implementation.
+The conceptual model is intentionally independent of database tables, ORM models, and mechanism-specific operational state.
 
 ---
 
@@ -27,183 +19,223 @@ The data model is designed around several principles.
 ```mermaid
 classDiagram
 
-class WorkflowDefinition
+    class WorkflowDefinition
+    class TriggerDefinition
+    class TaskDefinition
 
-class TriggerDefinition
+    class WorkflowExecution
+    class TaskExecution
 
-class TaskDefinition
+    WorkflowDefinition "1" --> "*" TriggerDefinition : owns
+    WorkflowDefinition "1" --> "*" TaskDefinition : owns
+    WorkflowDefinition "1" --> "*" WorkflowExecution : executed as
 
-class WorkflowExecution
+    WorkflowExecution "1" --> "*" TaskExecution : owns
 
-class TaskExecution
-
-WorkflowDefinition "1" --> "*" TriggerDefinition
-
-WorkflowDefinition "1" --> "*" TaskDefinition
-
-WorkflowDefinition "1" --> "*" WorkflowExecution
-
-WorkflowExecution "1" --> "*" TaskExecution
-
-TaskDefinition "1" --> "*" TaskExecution
+    TaskDefinition "*" --> "*" TaskDefinition : dependencies
+    TaskExecution "*" --> "*" TaskExecution : runtime dependencies
 ```
 
----
-
-# Workflow Definition
-
-A Workflow Definition describes a reusable automation.
-
-It specifies:
-
-- Trigger configuration
-- Task definitions
-- Workflow structure
-
-Workflow Definitions are immutable once created.
-
-A single Workflow Definition may produce many Workflow Executions.
-
----
-
-# Trigger Definition
-
-A Trigger Definition specifies how a workflow begins.
-
-Examples include:
-
-- Manual
-- Scheduled
-- Webhook
-- File System
-
-Trigger Definitions contain configuration only.
-
-They contain no runtime state.
-
----
-
-# Task Definition
-
-A Task Definition describes an individual unit of work.
-
-Examples include:
-
-- HTTP Request
-- Send Email
-- Generate CSV
-- Delay
-
-Task Definitions specify:
-
-- Task type
-- Configuration
-- Parameters
-
-Task Definitions contain no execution state.
-
----
-
-# Workflow Execution
-
-A Workflow Execution represents one execution of a workflow.
-
-Each execution tracks runtime information such as:
-
-- Status
-- Start time
-- Finish time
-- Progress
-- Execution history
-
-Multiple Workflow Executions may exist simultaneously for the same Workflow Definition.
-
----
-
-# Task Execution
-
-A Task Execution represents the runtime state of one task within a Workflow Execution.
-
-Each Task Execution references its corresponding Task Definition.
-
-Task Executions maintain execution-specific information such as:
-
-- Status
-- Runtime timestamps
-- Retry information
-- Runtime metadata
-
-Task Executions never modify the underlying Task Definition.
-
----
-
-# Definition vs Execution
-
-The platform intentionally separates reusable definitions from runtime state.
-
-| Definition | Execution |
-|------------|-----------|
-| Workflow Definition | Workflow Execution |
-| Task Definition | Task Execution |
-| Immutable | Mutable |
-| Reused many times | Created for each run |
-
-This separation preserves execution history while allowing workflows to be executed repeatedly.
-
----
-
-# Ownership Relationships
-
-The following ownership relationships exist.
+The model separates two kinds of state:
 
 ```text
-Workflow Definition
+Definitions
+    reusable workflow structure and configuration
 
-├── Trigger Definitions
-
-└── Task Definitions
+Executions
+    independent state for one workflow run
 ```
+
+---
+
+# Definitions
+
+A `WorkflowDefinition` represents one reusable automation.
+
+It owns:
 
 ```text
-Workflow Execution
-
-└── Task Executions
+WorkflowDefinition
+├── TriggerDefinitions
+└── TaskDefinitions
 ```
 
-Definitions describe what should happen.
+A `TriggerDefinition` describes reusable configuration for a mechanism capable of starting the workflow.
 
-Executions describe what is currently happening.
+A `TaskDefinition` describes one reusable unit of work, including its Task Plugin configuration, retry policy, and dependency relationships.
 
----
+Task Definitions form the reusable workflow DAG:
 
-# Runtime State
+```text
+       A
+      / \
+     B   C
+      \ /
+       D
+```
 
-Only execution objects maintain mutable runtime state.
+Definitions do not contain execution progress and may be reused by many independent executions.
 
-Examples include:
-
-- Current status
-- Execution timestamps
-- Retry information
-- Failure information
-- Progress
-
-Definitions remain unchanged throughout execution.
+A workflow may also be started explicitly through an Application capability without requiring a Trigger Definition.
 
 ---
 
-# Future Evolution
+# Executions
 
-The conceptual model intentionally supports future enhancements.
+A `WorkflowExecution` represents one run of a `WorkflowDefinition`.
 
-Potential future additions include:
+It owns the `TaskExecution` objects for that run:
 
-- Workflow versioning
-- Parallel execution
-- DAG workflows
-- Retry policies
-- Execution metrics
-- Audit history
-- Workflow cancellation
+```text
+WorkflowExecution
+└── TaskExecutions
+```
 
-These capabilities can be introduced while preserving the distinction between immutable definitions and mutable execution state.
+A `TaskExecution` represents the execution-specific state of one Task Definition, including:
+
+- Status.
+- Execution timestamps.
+- Retry state.
+- Dependency state.
+- Runtime task relationships.
+- Output.
+
+Multiple Workflow Executions may reference the same Workflow Definition concurrently without sharing mutable execution state.
+
+---
+
+# Definition-to-Execution Relationship
+
+Starting a workflow compiles its reusable definition into independent execution state:
+
+```text
+WorkflowDefinition
+        │
+        │ compile
+        ▼
+WorkflowExecution
+        │
+        └── TaskExecutions
+```
+
+Each Task Definition produces a corresponding Task Execution.
+
+Definition-level dependencies and execution policy required at runtime are snapshotted into execution-specific state, including information such as:
+
+```text
+remaining_dependencies
+parent task execution IDs
+child task execution IDs
+retry state
+```
+
+This allows each Workflow Execution to progress independently from the reusable definition and from other executions.
+
+The compilation and progression algorithm is documented in [Execution Model](execution-model.md).
+
+---
+
+# Definition vs. Execution
+
+| Definitions                 | Executions                 |
+| --------------------------- | -------------------------- |
+| `WorkflowDefinition`        | `WorkflowExecution`        |
+| `TaskDefinition`            | `TaskExecution`            |
+| Reusable                    | Created for each run       |
+| Configuration and structure | Runtime state              |
+| No execution progress       | Mutable execution progress |
+| Shared across executions    | Isolated to one execution  |
+
+In short:
+
+```text
+Definitions
+    describe what should happen
+
+Executions
+    describe what is happening or happened
+```
+
+---
+
+# Operational State Outside the Core Model
+
+Not every durable record is a core Domain concept.
+
+Some mechanisms require infrastructure-specific operational state.
+
+Chronological scheduling is one example:
+
+```text
+TriggerDefinition
+    reusable trigger configuration
+
+ChronologicalTriggerState
+    durable scheduling progress
+```
+
+`ChronologicalTriggerState` tracks information such as:
+
+```text
+trigger_definition_id
+next_run_at
+```
+
+but is intentionally not part of the core conceptual model.
+
+The same principle applies to Queue entries and future mechanism-specific state.
+
+This keeps infrastructure concerns from becoming Domain concepts merely because they are persisted.
+
+---
+
+# Persistence Independence
+
+The conceptual model does not map one-to-one to database tables.
+
+Persistence may introduce additional representations for:
+
+- Normalized relationships.
+- Efficient querying.
+- Concurrency control.
+- Scheduling state.
+- Queue coordination.
+
+These representations do not automatically become Domain concepts.
+
+Likewise, the conceptual model does not expose SQLAlchemy or PostgreSQL details.
+
+See [Persistence Architecture](persistence/README.md) and [Database Schema](persistence/database-schema.md) for the durable representation.
+
+---
+
+# Summary
+
+The core model is:
+
+```text
+REUSABLE DEFINITIONS
+
+WorkflowDefinition
+├── TriggerDefinitions
+└── TaskDefinitions
+        │
+        │ compiled
+        ▼
+
+INDEPENDENT EXECUTIONS
+
+WorkflowExecution
+└── TaskExecutions
+
+
+SEPARATE OPERATIONAL STATE
+
+ChronologicalTriggerState
+Queue entries
+future mechanism-specific state
+```
+
+The central distinction is:
+
+> **Definitions describe reusable workflow structure, executions contain independent runtime state, and mechanism-specific operational state remains outside the core model.**

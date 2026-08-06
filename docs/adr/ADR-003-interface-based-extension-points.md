@@ -16,7 +16,9 @@ Possible approaches included explicit conditional dispatch, manually registered 
 
 The platform will provide interface-based extension points for task and trigger plugins.
 
-Each plugin category defines a common interface that concrete implementations must satisfy.
+Each plugin category defines a common base interface that concrete implementations must satisfy. More specialized interfaces may define additional behavioral contracts for implementations that share a common execution mechanism.
+
+For trigger plugins, mechanism-specific contracts are defined through specialized interfaces as described in ADR-021.
 
 Plugin implementations expose stable plugin type identifiers that are persisted in workflow definitions and used to resolve the corresponding implementation at runtime.
 
