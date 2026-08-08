@@ -31,28 +31,31 @@ Execution Queue
 
 The platform is a modular monolith with multiple independently executable processes sharing the same codebase and architectural components.
 
-Current background runtimes are:
+Current Runtime processes are:
 
 ```text
 Runtime
+├── API
 ├── Worker
 ├── Reconciler
 └── Scheduler
 ```
 
-A future API Runtime can provide the external HTTP entry point.
-
 Each process solves a different operational problem:
 
-| Runtime        | Responsibility                               | Primary Dependency                        |
-| -------------- | -------------------------------------------- | ----------------------------------------- |
-| **Worker**     | Execute runnable Task Executions.            | `TaskProcessingService` + Execution Queue |
-| **Reconciler** | Repair runnable work missing from the Queue. | Unit of Work + Execution Queue            |
-| **Scheduler**  | Process due chronological occurrences.       | `ChronologicalTriggerService`             |
+| Runtime        | Responsibility                                | Primary Dependency                        |
+| -------------- | --------------------------------------------- | ----------------------------------------- |
+| **API**        | Expose Application capabilities through HTTP. | Application services                      |
+| **Worker**     | Execute runnable Task Executions.             | `TaskProcessingService` + Execution Queue |
+| **Reconciler** | Repair runnable work missing from the Queue.  | Unit of Work + Execution Queue            |
+| **Scheduler**  | Process due chronological occurrences.        | `ChronologicalTriggerService`             |
 
 Conceptually:
 
 ```text
+API
+    exposes Application capabilities through HTTP
+
 Scheduler
     starts workflows when chronological occurrences are due
 
@@ -65,6 +68,7 @@ Reconciler
 
 See:
 
+- [API Runtime](api/README.md)
 - [Worker Runtime](worker.md)
 - [Reconciler Runtime](reconciler.md)
 - [Scheduler Runtime](scheduler.md)
@@ -79,7 +83,7 @@ Runtime processes follow several common principles:
 - Support graceful shutdown.
 - Use interruptible waits for polling.
 - Recover from transient cycle failures where appropriate.
-- Choose concurrency mechanisms according to the work being performed.
+- Choose concurrency mechanisms according to the actual work.
 - Avoid shared Runtime abstractions until meaningful common behavior emerges.
 
 The Runtime Layer is a **process boundary**, not a second business-logic layer.
@@ -99,12 +103,16 @@ Domain / Persistence / Plugins / Queue
 For example:
 
 ```text
+API
+    ↓
+Application Service
+```
+
+```text
 Worker
     ↓
 TaskProcessingService
 ```
-
-and:
 
 ```text
 Scheduler
@@ -120,19 +128,31 @@ Reconciler
     └── ExecutionQueue
 ```
 
-It directly coordinates two existing abstractions because reconciliation currently contains very little Application policy.
+It directly coordinates two existing abstractions because reconciliation currently contains little Application policy.
 
 If meaningful reconciliation policy develops, it can be extracted into an Application service.
 
-## Concurrency and Recovery
+## Concurrency Model
 
-Each Runtime uses a concurrency model appropriate to its work.
+Concurrency is intentionally Runtime-specific.
+
+### API
+
+API processes may run concurrently. They share authoritative state through PostgreSQL and the Execution Queue rather than through process memory.
+
+```text
+API 1 ──┐
+API 2 ──┼── PostgreSQL
+API 3 ──┘
+              +
+        Execution Queue
+```
+
+No API-specific inter-process coordination mechanism is required.
 
 ### Worker
 
-Workers execute potentially long-running arbitrary plugin code.
-
-Ownership therefore uses:
+Workers execute potentially long-running arbitrary Plugin code. Queue ownership therefore uses:
 
 ```text
 claim token
@@ -142,29 +162,25 @@ renewable lease
 heartbeat
 ```
 
-Multiple Workers coordinate through the Execution Queue without communicating directly.
+Multiple Workers coordinate through the Execution Queue without direct communication.
 
 ### Scheduler
 
-Chronological processing is deliberately short-lived and transactional.
-
-Multiple Schedulers coordinate through PostgreSQL:
+Chronological processing is deliberately short-lived and transactional. Multiple Schedulers coordinate through PostgreSQL:
 
 ```sql
 FOR UPDATE SKIP LOCKED
 ```
 
-No Scheduler leases, claim tokens, or heartbeats are required.
+No Scheduler leases, claim tokens, heartbeats, leader election, or distributed Scheduler locks are required.
 
 ### Reconciler
 
-Reconciliation is repeatable repair work.
-
-A single Reconciler is sufficient for the current system, and repeated publication is safe because Queue enqueueing is idempotent.
+Reconciliation is repeatable repair work. One Reconciler is sufficient for the current system because Queue enqueueing is idempotent.
 
 Additional scaling mechanisms are deferred until required.
 
-These different strategies are intentional. Runtime concurrency is not forced through one generic mechanism.
+These strategies are intentionally different. Runtime concurrency is not forced through one generic mechanism.
 
 ## Bootstrap
 
@@ -185,7 +201,7 @@ construct Application services
     ↓
 construct Runtime
     ↓
-register shutdown signals
+register shutdown signals where required
     ↓
 run
 ```
@@ -195,6 +211,10 @@ Each bootstrap constructs only the dependency graph required by its process.
 Conceptually:
 
 ```text
+API
+    → Application services
+    → FastAPI application
+
 Worker
     → ExecutionQueue
     → TaskProcessingService
@@ -207,34 +227,20 @@ Scheduler
     → ChronologicalTriggerService
 ```
 
-Runtime classes receive already-constructed dependencies, keeping dependency composition separate from runtime behavior.
+Runtime classes receive already-constructed dependencies, keeping dependency composition separate from Runtime behavior.
 
 ## Process Entry Points
 
 Current Runtime processes are exposed through Python console entry points:
 
 ```text
+automation-api
 automation-worker
 automation-reconciler
 automation-scheduler
 ```
 
 Deployment infrastructure determines how many instances of each process run.
-
-For example:
-
-```text
-PostgreSQL
-
-Worker 1
-Worker 2
-Worker 3
-
-Reconciler
-
-Scheduler 1
-Scheduler 2
-```
 
 Process count and placement are deployment concerns rather than Application concerns.
 
@@ -253,7 +259,7 @@ SIGINT
 SIGTERM
 ```
 
-into that runtime operation.
+into that Runtime operation.
 
 Polling Runtimes use their shutdown Event for interruptible waits:
 
@@ -263,17 +269,18 @@ stop_event.wait(interval)
 
 rather than unconditional sleeps.
 
-This allows idle processes to respond immediately to shutdown without coupling Runtime classes to operating-system signal handling.
+The API is different because Uvicorn owns the HTTP server lifecycle rather than an application-defined processing loop.
 
 ## Failure Handling
 
 Failure policy remains Runtime-specific.
 
-| Runtime        | Failure Strategy                                                                             |
-| -------------- | -------------------------------------------------------------------------------------------- |
-| **Worker**     | Protect claim ownership; abandon Queue disposition if the claim becomes untrusted.           |
-| **Reconciler** | Log failed repair cycles and retry after the configured interval.                            |
-| **Scheduler**  | Roll back failed occurrence transactions and avoid tight retries of repeatedly failing work. |
+| Runtime        | Failure Strategy                                                                                    |
+| -------------- | --------------------------------------------------------------------------------------------------- |
+| **API**        | Translate known Application failures into HTTP responses. Unexpected failures remain server errors. |
+| **Worker**     | Protect claim ownership; abandon Queue disposition if the claim becomes untrusted.                  |
+| **Reconciler** | Log failed repair cycles and retry after the configured interval.                                   |
+| **Scheduler**  | Roll back failed occurrence transactions and avoid tight retries of repeatedly failing work.        |
 
 Runtime failure handling determines how the process continues.
 
@@ -281,18 +288,7 @@ Application, Persistence, and Queue guarantees continue to determine system corr
 
 ## No Shared Base Runtime
 
-Worker, Reconciler, and Scheduler share some superficial lifecycle concepts:
-
-```text
-run()
-stop()
-shutdown Event
-polling
-logging
-signal registration
-```
-
-They intentionally do not inherit from a generic `BaseRuntime`.
+Worker, Reconciler, Scheduler, and API share some superficial lifecycle concepts, but they intentionally do not inherit from a generic `BaseRuntime`.
 
 Their work acquisition, failure semantics, concurrency requirements, dependencies, and lifecycle details are substantially different.
 
@@ -314,13 +310,13 @@ reconciliation_interval
 scheduler_poll_interval
 ```
 
+API server configuration is currently supplied during API bootstrap rather than being part of the central `Settings` object.
+
 Settings are loaded during bootstrap and required values are passed explicitly to Runtime construction.
 
 Logging is likewise configured once during bootstrap.
 
-Runtime modules then use ordinary module-level loggers for meaningful events such as startup, shutdown, failed cycles, claim ownership problems, and unexpected processing failures.
-
-Neither Configuration nor Observability becomes part of Runtime correctness.
+Runtime modules then use ordinary module-level loggers for meaningful operational events.
 
 ## Package Organization
 
@@ -328,6 +324,14 @@ Runtime code is organized by independently executable process:
 
 ```text
 runtime/
+├── api/
+│   ├── bootstrap.py
+│   ├── app.py
+│   ├── dependencies.py
+│   ├── exception_handler.py
+│   ├── routers/
+│   └── schemas/
+│
 ├── worker/
 │   ├── worker.py
 │   └── bootstrap.py
@@ -341,21 +345,25 @@ runtime/
     └── bootstrap.py
 ```
 
-The documentation mirrors that organization:
+The API has its own documentation folder because its HTTP boundary contains several independently useful concerns:
 
 ```text
 docs/architecture/runtime/
-├── overview.md
+├── README.md
 ├── worker.md
 ├── reconciler.md
-└── scheduler.md
+├── scheduler.md
+└── api/
+    ├── README.md
+    ├── runtime.md
+    └── http.md
 ```
 
 ## Testing Strategy
 
 Runtime behavior is tested at several levels.
 
-**Unit tests** verify Runtime loops, polling, shutdown, failure handling, dependency interactions, and Runtime-specific concurrency behavior using mocked architectural dependencies.
+**Unit tests** verify Runtime loops, polling, shutdown, failure handling, and dependency interactions using mocked architectural dependencies.
 
 **Integration tests** verify PostgreSQL-backed Persistence and Queue behavior where mocks are insufficient.
 
@@ -370,8 +378,4 @@ reconciliation of stranded work
 concurrent Scheduler processing
 ```
 
-The Runtime testing goal is to verify process behavior and architectural guarantees rather than duplicate lower-level subsystem tests.
-
-## Guiding Principle
-
-> **Runtime processes decide when and how to drive platform capabilities. The capabilities themselves remain owned by Application, Persistence, Plugins, Domain, and the Execution Queue.**
+API HTTP behavior is tested at the API boundary rather than duplicated in lower-level subsystem tests.

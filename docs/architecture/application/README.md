@@ -30,13 +30,13 @@ flowchart TD
 
 Responsibilities remain distinct:
 
-| Component | Owns |
-| --- | --- |
-| Application | Business orchestration and transaction boundaries |
-| Persistence | Durable state, transactions, and database concurrency primitives |
-| Plugins | Extensible task and trigger behavior |
-| Execution Queue | Delivery, claims, leases, heartbeats, and worker ownership |
-| Runtime | Polling, shutdown, transport, and process lifecycle |
+| Component       | Owns                                                             |
+| --------------- | ---------------------------------------------------------------- |
+| Application     | Business orchestration and transaction boundaries                |
+| Persistence     | Durable state, transactions, and database concurrency primitives |
+| Plugins         | Extensible task and trigger behavior                             |
+| Execution Queue | Delivery, claims, leases, heartbeats, and worker ownership       |
+| Runtime         | Polling, shutdown, transport, and process lifecycle              |
 
 The Execution Queue remains separate from Persistence. Application may publish runnable work, but queue lifecycle concerns remain outside the Application Layer.
 
@@ -49,6 +49,7 @@ Application packages represent meaningful business capabilities rather than CRUD
 ```text
 workflow_definitions
 workflow_start
+workflow_execution_query
 task_processing
 chronological_triggers
 trigger_initialization
@@ -165,6 +166,10 @@ application/
 │   ├── __init__.py
 │   └── service.py
 │
+├── workflow_execution_query/
+│   ├── __init__.py
+│   └── service.py
+│
 ├── task_processing/
 │   ├── __init__.py
 │   ├── models.py
@@ -185,13 +190,14 @@ Packages should remain small until additional complexity justifies decomposition
 
 ## Capabilities
 
-| Capability | Responsibility |
-| --- | --- |
-| [Workflow Definition Management](workflow-definitions.md) | Creates, validates, persists, and deletes reusable workflow definitions; coordinates trigger initialization. |
-| [Workflow Start](workflow-start.md) | Compiles a reusable definition into executable state, persists it, commits, and publishes initially runnable tasks. |
-| [Task Processing](task-processing.md) | Processes a claimed Task Execution, including plugin execution, completion, retries, workflow failure, and dependency progression. |
-| [Trigger Initialization](trigger-initialization.md) | Dispatches definition-time initialization according to trigger mechanism interfaces. |
-| [Chronological Triggers](chronological-triggers.md) | Processes time-based trigger occurrences, including scheduling state, concurrency, workflow creation, and transaction boundaries. |
+| Capability                                                | Responsibility                                                                                                                     |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| [Workflow Definition Management](workflow-definitions.md) | Creates, validates, persists, and deletes reusable workflow definitions; coordinates trigger initialization.                       |
+| [Workflow Start](workflow-start.md)                       | Compiles a reusable definition into executable state, persists it, commits, and publishes initially runnable tasks.                |
+| [Workflow Execution Query](workflow-execution-query.md)   | Retrieves persisted Workflow Executions through the Application boundary.                                                          |
+| [Task Processing](task-processing.md)                     | Processes a claimed Task Execution, including plugin execution, completion, retries, workflow failure, and dependency progression. |
+| [Trigger Initialization](trigger-initialization.md)       | Dispatches definition-time initialization according to trigger mechanism interfaces.                                               |
+| [Chronological Triggers](chronological-triggers.md)       | Processes time-based trigger occurrences, including scheduling state, concurrency, workflow creation, and transaction boundaries.  |
 
 ## Runtime Interaction
 
@@ -199,12 +205,15 @@ Packages should remain small until additional complexity justifies decomposition
 flowchart TD
     API["API Runtime"] --> Definitions["Workflow Definition Service"]
     API --> Start["Workflow Start Service"]
+    API --> Query["Workflow Execution Query Service"]
     Scheduler["Scheduler Runtime"] --> Chronological["Chronological Trigger Service"]
     Worker["Worker Runtime"] --> Processing["Task Processing Service"]
     Chronological --> Start
 ```
 
 The Scheduler invokes chronological scheduling rather than workflow start directly because scheduled activation must first safely process and advance a persisted occurrence. The Worker invokes task processing rather than manipulating Task Execution state itself.
+
+The API invokes the query capability when it needs to retrieve persisted execution state rather than accessing the Workflow Execution repository directly.
 
 A runtime receives only the Application dependencies it needs. There is no requirement for a single global `Application` object.
 
@@ -263,9 +272,9 @@ Future capabilities may introduce new trigger mechanisms, execution policies, sc
 
 In particular:
 
-* Do not generalize a capability solely because another implementation might exist later.
-* Reuse an existing mechanism when a new plugin shares its lifecycle and transactional semantics.
-* Introduce a new mechanism when its state, infrastructure, or execution model is fundamentally different.
-* Preserve explicit transaction ownership and infrastructure-independent application services as the system evolves.
+- Do not generalize a capability solely because another implementation might exist later.
+- Reuse an existing mechanism when a new plugin shares its lifecycle and transactional semantics.
+- Introduce a new mechanism when its state, infrastructure, or execution model is fundamentally different.
+- Preserve explicit transaction ownership and infrastructure-independent application services as the system evolves.
 
 The goal is not to predict every future requirement, but to keep the current architecture easy to extend without embedding unnecessary complexity.

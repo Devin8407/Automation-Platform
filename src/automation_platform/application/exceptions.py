@@ -19,6 +19,12 @@ class WorkflowDefinitionNotFoundError(ApplicationError):
     pass
 
 
+class WorkflowExecutionNotFoundError(ApplicationError):
+    """Raised when a requested workflow execution does not exist."""
+
+    pass
+
+
 class WorkflowDefinitionDisabledError(ApplicationError):
     """Raised when an operation requires an enabled workflow definition."""
 

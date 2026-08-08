@@ -9,13 +9,16 @@ authors = [
     { name = "Devin MacKay" }
 ]
 dependencies = [
+    "fastapi>=0.141.1",
     "psycopg[binary]>=3.3.4",
     "sqlalchemy>=2.0.51",
+    "uvicorn>=0.52.1",
 ]
 
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.9.1",
     "mypy>=2.3.0",
     "pre-commit>=4.6.0",
     "pytest>=9.1.1",
@@ -52,3 +55,4 @@ exclude_also = [
 automation-worker = "automation_platform.runtime.worker.bootstrap:run_worker"
 automation-reconciler = "automation_platform.runtime.reconciler.bootstrap:run_reconciler"
 automation-scheduler = "automation_platform.runtime.scheduler.bootstrap:run_scheduler"
+automation-api = "automation_platform.runtime.api.bootstrap:run_api"

@@ -12,4 +12,5 @@ pytest_plugins = (
     "tests.fixtures.runtime.worker",
     "tests.fixtures.runtime.reconciler",
     "tests.fixtures.runtime.scheduler",
+    "tests.fixtures.runtime.api",
 )

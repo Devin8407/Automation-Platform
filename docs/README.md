@@ -2,11 +2,12 @@
 
 This directory contains the technical documentation for the Automation Platform.
 
-Documentation is organized into three primary areas:
+Documentation is organized into four primary areas:
 
 ```text
 docs/
 ├── architecture/    Current system design and technical behavior
+├── api/             Consumer-facing API usage
 ├── adr/             Architectural decisions and their reasoning
 └── planning         Project direction and implementation priorities
 ```
@@ -32,6 +33,25 @@ Describes the system **as it currently exists**, including:
 - Configuration, infrastructure, and observability.
 
 The Architecture README provides the recommended reading order and navigation into detailed subsystem documentation.
+
+---
+
+# API
+
+[API Documentation](api/README.md)
+
+Describes how consumers interact with the Automation Platform through its HTTP API, including:
+
+- Available API operations.
+- Workflow definition creation.
+- Workflow execution.
+- Request and response representations.
+- HTTP status codes and error handling.
+- Typical client workflows.
+
+API documentation describes **how consumers use the system**.
+
+Architecture documentation describes **how the system is implemented**.
 
 ---
 
@@ -80,6 +100,9 @@ docs/README.md
     │      └── subsystem folders
     │             └── README.md + detailed documents
     │
+    ├── api/
+    │      └── README.md + consumer-facing API documentation
+    │
     ├── adr/
     │      └── README.md + individual ADRs
     │
@@ -93,6 +116,8 @@ Each level has a distinct responsibility:
 - **Architecture Overview** — explains how the complete system works.
 - **Subsystem READMEs** — explain and navigate individual architectural subsystems.
 - **Detailed architecture documents** — describe specific capabilities and guarantees.
+- **API README** — indexes consumer-facing API documentation.
+- **API documentation** — describes how consumers interact with the API.
 - **ADRs** — preserve architectural decision history.
 - **Planning documents** — describe completed milestones, active work, and future direction.
 
