@@ -35,3 +35,4 @@ ADRs preserve **why significant architectural choices were made**. The current a
 - [**ADR-020:** Explicit Runtime Configuration and Composition Roots](ADR-020-explicit-runtime-configuration-and-composition-roots.md)
 - [**ADR-021:** Specialized Interfaces for Trigger Mechanisms](ADR-021-specialized-interfaces-for-trigger-mechanisms.md)
 - [**ADR-022:** Transactional Chronological Trigger Processing](ADR-022-transactional-chronological-trigger-processing.md)
+- [**ADR-023:** HTTP API as an Application Boundary](ADR-023-http-api-as-application-boundary.md)

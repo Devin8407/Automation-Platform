@@ -219,22 +219,21 @@ Development follows several principles:
 
 **Goal:** Expose workflow management and execution capabilities through an external HTTP interface.
 
-### Planned
+### Completed
 
-- [ ] FastAPI application
-- [ ] API Runtime and composition root
-- [ ] Workflow Definition endpoints
-- [ ] Workflow Execution endpoints
-- [ ] Execution status and history endpoints
-- [ ] Request and response validation
-- [ ] Application-layer error translation
-- [ ] OpenAPI documentation
-- [ ] API integration tests
-- [ ] Health and readiness endpoints
+- [x] FastAPI application
+- [x] API Runtime and composition root
+- [x] Workflow Definition endpoints
+- [x] Workflow Execution endpoints
+- [x] Execution status endpoints
+- [x] Request and response validation
+- [x] Application-layer error translation
+- [x] OpenAPI documentation
+- [x] API integration tests
 
 **Outcome:** Workflows can be defined, started, inspected, and managed through a documented REST API.
 
-**Status:** ⏳ Planned
+**Status:** ✅ Complete
 
 ---
 
