@@ -17,4 +17,7 @@ class Settings:
 
     reconciliation_interval: timedelta
 
+    api_host: str
+    api_port: str
+
     log_level: str

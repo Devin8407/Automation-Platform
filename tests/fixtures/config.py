@@ -20,6 +20,8 @@ def settings_factory() -> Callable[..., Settings]:
         worker_heartbeat_interval: timedelta | None = timedelta(seconds=10),
         scheduler_poll_interval: timedelta | None = timedelta(seconds=1),
         reconciliation_interval: timedelta | None = timedelta(seconds=30),
+        api_host: str = "0.0.0.0",
+        api_port: str = "8000",
         log_level: str = "low",
     ) -> Settings:
         return Settings(
@@ -31,6 +33,8 @@ def settings_factory() -> Callable[..., Settings]:
             worker_heartbeat_interval,
             scheduler_poll_interval,
             reconciliation_interval,
+            api_host,
+            api_port,
             log_level,
         )
 

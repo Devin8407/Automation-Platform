@@ -21,7 +21,7 @@ from .exception_handlers import (
     handle_workflow_definition_not_found,
     handle_workflow_execution_not_found,
 )
-from .routers import router
+from .routers import health_router, workflow_router
 
 
 def create_app(
@@ -40,7 +40,8 @@ def create_app(
     app.state.workflow_start_service = workflow_start_service
     app.state.workflow_execution_query_service = workflow_execution_query_service
 
-    app.include_router(router)
+    app.include_router(workflow_router)
+    app.include_router(health_router)
 
     app.add_exception_handler(
         InvalidWorkflowDefinitionError,

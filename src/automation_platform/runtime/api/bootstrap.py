@@ -80,6 +80,6 @@ def run_api() -> None:
 
     uvicorn.run(
         app,
-        host="0.0.0.0",
-        port=8000,
+        host=settings.api_host,
+        port=settings.api_port,
     )

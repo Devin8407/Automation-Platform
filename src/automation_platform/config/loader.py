@@ -38,6 +38,8 @@ def load_settings() -> Settings:
         worker_heartbeat_interval=timedelta(seconds=worker_heartbeat_interval),
         scheduler_poll_interval=timedelta(seconds=scheduler_poll_interval),
         reconciliation_interval=timedelta(seconds=reconciliation_interval),
+        api_host=os.getenv("API_HOST", "0.0.0.0"),
+        api_port=os.getenv("API_PORT", "8000"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )
 

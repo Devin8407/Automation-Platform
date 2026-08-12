@@ -9,6 +9,10 @@ def test_run_api_wires_services_and_runs_server(monkeypatch):
     """API bootstrap should wire application services into the FastAPI app."""
 
     settings = MagicMock()
+    settings.log_level = "INFO"
+    settings.api_host = "127.0.0.1"
+    settings.api_port = 9000
+
     infrastructure = MagicMock()
     uow_factory = MagicMock()
     execution_queue = MagicMock()
@@ -73,20 +77,24 @@ def test_run_api_wires_services_and_runs_server(monkeypatch):
         uow_factory=uow_factory,
         execution_queue=execution_queue,
     )
+
     bootstrap.ChronologicalTriggerService.assert_called_once_with(
         uow_factory=uow_factory,
         trigger_registry=bootstrap.ChronologicalTriggerService.call_args.kwargs["trigger_registry"],
         workflow_start_service=workflow_start_service,
     )
+
     bootstrap.TriggerInitializationService.assert_called_once_with(
         chronological_trigger_service=chronological_trigger_service,
     )
+
     bootstrap.WorkflowDefinitionService.assert_called_once_with(
         uow_factory=uow_factory,
         task_registry=bootstrap.WorkflowDefinitionService.call_args.kwargs["task_registry"],
         trigger_registry=bootstrap.WorkflowDefinitionService.call_args.kwargs["trigger_registry"],
         trigger_initialization_service=trigger_initialization_service,
     )
+
     bootstrap.WorkflowExecutionQueryService.assert_called_once_with(
         uow_factory=uow_factory,
     )
@@ -99,6 +107,6 @@ def test_run_api_wires_services_and_runs_server(monkeypatch):
 
     bootstrap.uvicorn.run.assert_called_once_with(
         app,
-        host="0.0.0.0",
-        port=8000,
+        host=settings.api_host,
+        port=settings.api_port,
     )
