@@ -12,7 +12,7 @@ from automation_platform.domain.workflow_definitions import (
 from automation_platform.persistence.workflow_definitions._mapper import (
     WorkflowDefinitionMapper,
 )
-from automation_platform.persistence.workflow_definitions._model import (
+from automation_platform.persistence.workflow_definitions.model import (
     TaskDefinitionDependencyModel,
     TaskDefinitionModel,
     TriggerDefinitionModel,

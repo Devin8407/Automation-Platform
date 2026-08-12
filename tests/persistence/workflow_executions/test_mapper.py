@@ -8,7 +8,7 @@ from automation_platform.domain import TaskOutput
 from automation_platform.persistence.workflow_executions._mapper import (
     WorkflowExecutionMapper,
 )
-from automation_platform.persistence.workflow_executions._model import (
+from automation_platform.persistence.workflow_executions.model import (
     TaskExecutionModel,
     WorkflowExecutionModel,
 )

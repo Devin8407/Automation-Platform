@@ -11,10 +11,10 @@ from uuid import uuid4
 from sqlalchemy import func, select
 
 from automation_platform.domain import TaskStatus, WorkflowStatus
-from automation_platform.persistence.workflow_definitions._model import (
+from automation_platform.persistence.workflow_definitions.model import (
     TriggerDefinitionModel,
 )
-from automation_platform.persistence.workflow_executions._model import (
+from automation_platform.persistence.workflow_executions.model import (
     WorkflowExecutionModel,
 )
 from automation_platform.runtime.worker import Worker
@@ -558,7 +558,7 @@ def _set_next_run_at(
 ) -> None:
     """Set chronological trigger state directly for integration setup."""
 
-    from automation_platform.persistence.chronological_triggers._model import (
+    from automation_platform.persistence.chronological_triggers.model import (
         ChronologicalTriggerStateModel,
     )
 

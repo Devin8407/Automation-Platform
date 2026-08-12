@@ -14,7 +14,7 @@ from automation_platform.domain.workflow_executions import WorkflowExecution
 
 from ...domain import TaskOutput, TaskStatus, WorkflowStatus
 from ._mapper import WorkflowExecutionMapper
-from ._model import TaskExecutionModel, WorkflowExecutionModel
+from .model import TaskExecutionModel, WorkflowExecutionModel
 from .operations import (
     CompleteTaskExecutionHelperResult,
     CompleteTaskExecutionRequest,

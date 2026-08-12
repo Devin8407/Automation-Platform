@@ -15,7 +15,7 @@ from automation_platform.domain.workflow_definitions import (
     WorkflowDefinition,
 )
 
-from ._model import (
+from .model import (
     TaskDefinitionDependencyModel,
     TaskDefinitionModel,
     TriggerDefinitionModel,

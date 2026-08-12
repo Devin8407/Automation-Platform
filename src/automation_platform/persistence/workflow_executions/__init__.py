@@ -1,3 +1,4 @@
+from .model import TaskExecutionModel, WorkflowExecutionModel
 from .operations import (
     CompleteTaskExecutionRequest,
     CompleteTaskExecutionResult,
@@ -14,4 +15,6 @@ __all__ = [
     "RetryTaskExecutionResult",
     "WorkflowExecutionRepository",
     "StartTaskExecutionResult",
+    "WorkflowExecutionModel",
+    "TaskExecutionModel",
 ]

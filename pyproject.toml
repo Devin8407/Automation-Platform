@@ -9,8 +9,10 @@ authors = [
     { name = "Devin MacKay" }
 ]
 dependencies = [
+    "alembic>=1.19.1",
     "fastapi>=0.141.1",
     "psycopg[binary]>=3.3.4",
+    "python-dotenv>=1.2.2",
     "sqlalchemy>=2.0.51",
     "uvicorn>=0.52.1",
 ]

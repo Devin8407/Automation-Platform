@@ -10,11 +10,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from automation_platform.persistence.workflow_definitions._model import (
+from automation_platform.persistence.workflow_definitions.model import (
     TriggerDefinitionModel,
 )
 
-from ._model import ChronologicalTriggerStateModel
+from .model import ChronologicalTriggerStateModel
 from .operations import DueChronologicalTrigger
 
 

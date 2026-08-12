@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from automation_platform.domain.workflow_definitions import WorkflowDefinition
 
 from ._mapper import TaskDefinitionModel, WorkflowDefinitionMapper
-from ._model import (
+from .model import (
     TaskDefinitionDependencyModel,
     TriggerDefinitionModel,
     WorkflowDefinitionModel,

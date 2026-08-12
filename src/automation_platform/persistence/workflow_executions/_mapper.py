@@ -13,7 +13,7 @@ from automation_platform.domain.workflow_executions import (
 )
 
 from ...domain import TaskOutput
-from ._model import (
+from .model import (
     TaskExecutionModel,
     WorkflowExecutionModel,
 )

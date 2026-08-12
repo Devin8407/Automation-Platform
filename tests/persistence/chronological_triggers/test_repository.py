@@ -8,13 +8,13 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from automation_platform.persistence.chronological_triggers._model import (
+from automation_platform.persistence.chronological_triggers.model import (
     ChronologicalTriggerStateModel,
 )
 from automation_platform.persistence.chronological_triggers.repository import (
     ChronologicalTriggerRepository,
 )
-from automation_platform.persistence.workflow_definitions._model import (
+from automation_platform.persistence.workflow_definitions.model import (
     TriggerDefinitionModel,
     WorkflowDefinitionModel,
 )

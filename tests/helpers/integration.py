@@ -11,7 +11,7 @@ from automation_platform.application import (
     WorkflowStartService,
 )
 from automation_platform.domain import WorkflowStatus
-from automation_platform.persistence.chronological_triggers._model import (
+from automation_platform.persistence.chronological_triggers.model import (
     ChronologicalTriggerStateModel,
 )
 

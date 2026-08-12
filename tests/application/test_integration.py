@@ -7,10 +7,10 @@ import pytest
 from sqlalchemy import select
 
 from automation_platform.domain import TaskStatus, WorkflowStatus
-from automation_platform.persistence.chronological_triggers._model import (
+from automation_platform.persistence.chronological_triggers.model import (
     ChronologicalTriggerStateModel,
 )
-from automation_platform.persistence.workflow_definitions._model import (
+from automation_platform.persistence.workflow_definitions.model import (
     WorkflowDefinitionModel,
 )
 from tests.helpers import get_task, load_execution

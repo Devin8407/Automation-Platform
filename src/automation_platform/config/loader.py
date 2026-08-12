@@ -5,7 +5,12 @@ from __future__ import annotations
 import os
 from datetime import timedelta
 
+from dotenv import load_dotenv
+
 from .settings import Settings
+
+# Load variables from .env into the process environment.
+load_dotenv()
 
 # ==================================================================================================
 # Public API
@@ -94,7 +99,7 @@ def _validate_timing(
     scheduler_poll_interval: float,
     reconciliation_interval: float,
 ) -> None:
-    """Raise an exception if configuration timings are invalid"""
+    """Raise an exception if configuration timings are invalid."""
 
     if not queue_lease_timeout > 0:
         raise ValueError(f"queue lease timeout {queue_lease_timeout} is not greater than 0.")
