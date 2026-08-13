@@ -27,30 +27,7 @@ The result is a modular workflow engine with independently executable Worker, Sc
 
 The platform is a **modular monolith with independently executable Runtime processes**.
 
-```text
-                         ┌─────────────────┐
-                         │   API / Client  │
-                         └────────┬────────┘
-                                  │
-                                  ▼
-                         ┌─────────────────┐
-                         │   Application   │
-                         └────────┬────────┘
-                                  │
-                ┌─────────────────┼─────────────────┐
-                ▼                 ▼                 ▼
-           Persistence         Plugins      Execution Queue
-                │                                   │
-                │                                   ▼
-                │                                Workers
-                │
-                ├────────────► Scheduler
-                │
-                └────────────► Reconciler
-                │
-                ▼
-            PostgreSQL
-```
+![Automation Platform Architecture](assets/architecture.png)
 
 Responsibilities are deliberately separated:
 
