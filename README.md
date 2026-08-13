@@ -263,8 +263,8 @@ GitHub Actions runs automated tests and quality checks on repository changes.
 | **Testing**                | pytest                                      |
 | **Quality**                | Ruff                                        |
 | **CI**                     | GitHub Actions                              |
-| **Deployment**             | Docker *(planned multi-process deployment)- |
-| **API**                    | FastAPI *(planned)-                         |
+| **Deployment**             | Docker                                      |
+| **API**                    | FastAPI                                     |
 
 PostgreSQL is used intentionally for database-backed concurrency primitives such as conditional updates, row locking, and `SKIP LOCKED`.
 
@@ -296,17 +296,11 @@ The core workflow engine, concurrency model, recovery mechanisms, and durable sc
 ✓ Unit, integration, concurrency, and system testing
 ✓ Continuous integration
 ✓ Architecture documentation and ADRs
+✓ REST API
+✓ Containerized multi-process deployment
 ```
 
 ### Next
-
-```text
-REST API
-    ↓
-Containerized multi-process deployment
-    ↓
-Production hardening
-```
 
 See the [Project Roadmap](docs/roadmap.md) for completed milestones and future direction.
 
