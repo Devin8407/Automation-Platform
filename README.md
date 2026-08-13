@@ -19,7 +19,7 @@ The result is a modular workflow engine with independently executable Worker, Sc
 - **Extensible Plugins** for task and trigger behavior without coupling implementations to orchestration, Persistence, or Runtime processes.
 - **Independent Runtime processes** with explicit configuration, composition roots, graceful shutdown, and shared infrastructure.
 - **Layered automated testing** covering unit behavior, PostgreSQL semantics, concurrency, failure recovery, and end-to-end workflow execution.
-- **Documented architectural reasoning** through focused technical documentation and 22 Architecture Decision Records.
+- **Documented architectural reasoning** through focused technical documentation and 23 Architecture Decision Records.
 
 ---
 
