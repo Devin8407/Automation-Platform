@@ -5,12 +5,7 @@ from __future__ import annotations
 import os
 from datetime import timedelta
 
-from dotenv import load_dotenv
-
 from .settings import Settings
-
-# Load variables from .env into the process environment.
-load_dotenv()
 
 # ==================================================================================================
 # Public API
@@ -44,7 +39,7 @@ def load_settings() -> Settings:
         scheduler_poll_interval=timedelta(seconds=scheduler_poll_interval),
         reconciliation_interval=timedelta(seconds=reconciliation_interval),
         api_host=os.getenv("API_HOST", "0.0.0.0"),
-        api_port=os.getenv("API_PORT", "8000"),
+        api_port=_get_int("API_PORT", default=8000),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )
 
@@ -90,6 +85,18 @@ def _get_float(name: str, default: float) -> float:
         return float(value)
     except ValueError as exc:
         raise ValueError(f"Environment variable {name!r} must be a number.") from exc
+
+
+def _get_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+
+    if value is None:
+        return default
+
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"Environment variable {name!r} must be an integer.") from exc
 
 
 def _validate_timing(

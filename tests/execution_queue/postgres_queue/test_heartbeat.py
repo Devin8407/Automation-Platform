@@ -8,7 +8,7 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from automation_platform.execution_queue.claims import Claim
-from automation_platform.execution_queue.postgres._model import QueueEntryModel
+from automation_platform.execution_queue.postgres.model import QueueEntryModel
 from tests.helpers.postgres_queue import (
     create_claimed_postgres_queue_entry,
 )

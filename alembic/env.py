@@ -4,6 +4,7 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 from automation_platform.config import load_settings
+from automation_platform.execution_queue import QueueEntryModel  # noqa: F401, F403
 from automation_platform.infrastructure import Base
 from automation_platform.persistence import (
     ChronologicalTriggerStateModel,  # noqa: F401, F403

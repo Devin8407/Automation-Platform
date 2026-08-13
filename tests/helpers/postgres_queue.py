@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from automation_platform.execution_queue.postgres._model import QueueEntryModel
+from automation_platform.execution_queue.postgres.model import QueueEntryModel
 
 # ==================================================================================================
 # Public API

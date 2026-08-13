@@ -36,7 +36,7 @@ def run_worker() -> None:
     task_registry = TaskRegistry()
 
     task_processing_service = TaskProcessingService(
-        unit_of_work_factory=unit_of_work_factory,
+        uow_factory=unit_of_work_factory,
         task_registry=task_registry,
     )
 

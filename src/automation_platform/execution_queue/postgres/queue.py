@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from ..claims import Claim
 from ..interface import ExecutionQueue
-from ._model import QueueEntryModel
+from .model import QueueEntryModel
 
 
 class PostgresExecutionQueue(ExecutionQueue):

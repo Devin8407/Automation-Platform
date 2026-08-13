@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from automation_platform.execution_queue.postgres._model import QueueEntryModel
+from automation_platform.execution_queue.postgres.model import QueueEntryModel
 
 
 def test_enqueue_inserts_queue_entry(

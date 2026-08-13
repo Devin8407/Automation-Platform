@@ -29,7 +29,7 @@ def run_reconciler() -> None:
 
     infrastructure = build_infrastructure(settings)
 
-    unit_of_work_factory = build_unit_of_work_factory(infrastructure.session_factory)
+    unit_of_work_factory = build_unit_of_work_factory(infrastructure)
 
     execution_queue = build_execution_queue(infrastructure)
 
